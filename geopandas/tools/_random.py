@@ -1,9 +1,6 @@
 from warnings import warn
-
 import numpy
-
 from shapely.geometry import MultiPoint
-
 from geopandas.array import from_shapely, points_from_xy
 from geopandas.geoseries import GeoSeries
 
@@ -40,45 +37,18 @@ def uniform(geom, size, rng=None):
     >>> square = box(0,0,1,1)
     >>> uniform(square, size=102) # doctest: +SKIP
     """
-    generator = numpy.random.default_rng(seed=rng)
-
-    if geom is None or geom.is_empty:
-        return MultiPoint()
-
-    if geom.geom_type in ("Polygon", "MultiPolygon"):
-        return _uniform_polygon(geom, size=size, generator=generator)
-
-    if geom.geom_type in ("LineString", "MultiLineString"):
-        return _uniform_line(geom, size=size, generator=generator)
-
-    warn(
-        f"Sampling is not supported for {geom.geom_type} geometry type.",
-        UserWarning,
-        stacklevel=8,
-    )
-    return MultiPoint()
+    pass
 
 
 def _uniform_line(geom, size, generator):
     """
     Sample points from an input shapely linestring
     """
-
-    fracs = generator.uniform(size=size)
-    return from_shapely(geom.interpolate(fracs, normalized=True)).union_all()
+    pass
 
 
 def _uniform_polygon(geom, size, generator):
     """
     Sample uniformly from within a polygon using batched sampling.
     """
-    xmin, ymin, xmax, ymax = geom.bounds
-    candidates = []
-    while len(candidates) < size:
-        batch = points_from_xy(
-            x=generator.uniform(xmin, xmax, size=size),
-            y=generator.uniform(ymin, ymax, size=size),
-        )
-        valid_samples = batch[batch.sindex.query(geom, predicate="contains")]
-        candidates.extend(valid_samples)
-    return GeoSeries(candidates[:size]).union_all()
+    pass

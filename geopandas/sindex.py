@@ -1,15 +1,11 @@
 import numpy as np
-
 import shapely
 from shapely.geometry.base import BaseGeometry
-
 from . import _compat as compat
 from . import array, geoseries
-
 PREDICATES = {p.name for p in shapely.strtree.BinaryPredicate} | {None}
-
 if compat.GEOS_GE_310:
-    PREDICATES.update(["dwithin"])
+    PREDICATES.update(['dwithin'])
 
 
 class SpatialIndex:
@@ -23,15 +19,9 @@ class SpatialIndex:
     """
 
     def __init__(self, geometry):
-        # set empty geometries to None to avoid segfault on GEOS <= 3.6
-        # see:
-        # https://github.com/pygeos/pygeos/issues/146
-        # https://github.com/pygeos/pygeos/issues/147
         non_empty = geometry.copy()
         non_empty[shapely.is_empty(non_empty)] = None
-        # set empty geometries to None to maintain indexing
         self._tree = shapely.STRtree(non_empty)
-        # store geometries, including empty geometries for user access
         self.geometries = geometry.copy()
 
     @property
@@ -48,14 +38,12 @@ class SpatialIndex:
         >>> from shapely.geometry import Point
         >>> s = geopandas.GeoSeries([Point(0, 0), Point(1, 1)])
         >>> s.sindex.valid_query_predicates  # doctest: +SKIP
-        {None, "contains", "contains_properly", "covered_by", "covers", \
-"crosses", "dwithin", "intersects", "overlaps", "touches", "within"}
+        {None, "contains", "contains_properly", "covered_by", "covers", "crosses", "dwithin", "intersects", "overlaps", "touches", "within"}
         """
-        return PREDICATES
+        pass
 
-    def query(
-        self, geometry, predicate=None, sort=False, distance=None, output_format="tuple"
-    ):
+    def query(self, geometry, predicate=None, sort=False, distance=None,
+        output_format='tuple'):
         """
         Return the integer indices of all combinations of each input geometry
         and tree geometries where the bounding box of each input geometry
@@ -85,14 +73,12 @@ class SpatialIndex:
 
         Parameters
         ----------
-        geometry : shapely.Geometry or array-like of geometries \
-(numpy.ndarray, GeoSeries, GeometryArray)
+        geometry : shapely.Geometry or array-like of geometries (numpy.ndarray, GeoSeries, GeometryArray)
             A single shapely geometry or array of geometries to query against
             the spatial index. For array-like, accepts both GeoPandas geometry
             iterables (GeoSeries, GeometryArray) or a numpy array of Shapely
             geometries.
-        predicate : {None, "contains", "contains_properly", "covered_by", "covers", \
-"crosses", "intersects", "overlaps", "touches", "within", "dwithin"}, optional
+        predicate : {None, "contains", "contains_properly", "covered_by", "covers", "crosses", "intersects", "overlaps", "touches", "within", "dwithin"}, optional
             If predicate is provided, the input geometries are tested
             using the predicate function against each item in the tree
             whose extent intersects the envelope of the input geometry:
@@ -179,68 +165,7 @@ class SpatialIndex:
         geometries that can be joined based on overlapping bounding boxes or
         optional predicate are returned.
         """
-        if predicate not in self.valid_query_predicates:
-            if predicate == "dwithin":
-                raise ValueError("predicate = 'dwithin' requires GEOS >= 3.10.0")
-
-            raise ValueError(
-                "Got predicate='{}'; ".format(predicate)
-                + "`predicate` must be one of {}".format(self.valid_query_predicates)
-            )
-
-        # distance argument requirement of predicate `dwithin`
-        # and only valid for predicate `dwithin`
-        kwargs = {}
-        if predicate == "dwithin":
-            if distance is None:
-                # the distance parameter is needed
-                raise ValueError(
-                    "'distance' parameter is required for 'dwithin' predicate"
-                )
-            # add distance to kwargs
-            kwargs["distance"] = distance
-
-        elif distance is not None:
-            # distance parameter is invalid
-            raise ValueError(
-                "'distance' parameter is only supported in combination with "
-                "'dwithin' predicate"
-            )
-
-        geometry = self._as_geometry_array(geometry)
-
-        indices = self._tree.query(geometry, predicate=predicate, **kwargs)
-
-        if output_format != "tuple":
-            sort = True
-
-        if sort:
-            if indices.ndim == 1:
-                indices = np.sort(indices)
-            else:
-                # sort by first array (geometry) and then second (tree)
-                geo_idx, tree_idx = indices
-                sort_indexer = np.lexsort((tree_idx, geo_idx))
-                indices = np.vstack((geo_idx[sort_indexer], tree_idx[sort_indexer]))
-
-        if output_format == "sparse":
-            from scipy.sparse import coo_array
-
-            return coo_array(
-                (np.ones(len(indices[0]), dtype=np.bool_), indices),
-                shape=(len(self.geometries), len(geometry)),
-                dtype=np.bool_,
-            )
-
-        if output_format == "dense":
-            dense = np.zeros((len(self.geometries), len(geometry)), dtype=bool)
-            dense[indices] = True
-            return dense
-
-        if output_format == "tuple":
-            return indices
-
-        raise ValueError("Invalid output_format: {}".format(output_format))
+        pass
 
     @staticmethod
     def _as_geometry_array(geometry):
@@ -257,27 +182,10 @@ class SpatialIndex:
         np.ndarray
             A numpy array of Shapely geometries.
         """
-        if isinstance(geometry, np.ndarray):
-            return array.from_shapely(geometry)._data
-        elif isinstance(geometry, geoseries.GeoSeries):
-            return geometry.values._data
-        elif isinstance(geometry, array.GeometryArray):
-            return geometry._data
-        elif isinstance(geometry, BaseGeometry):
-            return geometry
-        elif geometry is None:
-            return None
-        else:
-            return np.asarray(geometry)
+        pass
 
-    def nearest(
-        self,
-        geometry,
-        return_all=True,
-        max_distance=None,
-        return_distance=False,
-        exclusive=False,
-    ):
+    def nearest(self, geometry, return_all=True, max_distance=None,
+        return_distance=False, exclusive=False):
         """
         Return the nearest geometry in the tree for each input geometry in
         ``geometry``.
@@ -301,8 +209,7 @@ class SpatialIndex:
 
         Parameters
         ----------
-        geometry : {shapely.geometry, GeoSeries, GeometryArray, numpy.array of Shapely \
-geometries}
+        geometry : {shapely.geometry, GeoSeries, GeometryArray, numpy.array of Shapely geometries}
             A single shapely geometry, one of the GeoPandas geometry iterables
             (GeoSeries, GeometryArray), or a numpy array of Shapely geometries to query
             against the spatial index.
@@ -357,26 +264,7 @@ geometries}
         array([[0, 1],
                [8, 9]])
         """
-        geometry = self._as_geometry_array(geometry)
-        if isinstance(geometry, BaseGeometry) or geometry is None:
-            geometry = [geometry]
-
-        result = self._tree.query_nearest(
-            geometry,
-            max_distance=max_distance,
-            return_distance=return_distance,
-            all_matches=return_all,
-            exclusive=exclusive,
-        )
-        if return_distance:
-            indices, distances = result
-        else:
-            indices = result
-
-        if return_distance:
-            return indices, distances
-        else:
-            return indices
+        pass
 
     def intersection(self, coordinates):
         """Compatibility wrapper for rtree.index.Index.intersection,
@@ -414,34 +302,7 @@ geometries}
         array([1, 2, 3])
 
         """
-        # TODO: we should deprecate this
-        # convert bounds to geometry
-        # the old API uses tuples of bound, but Shapely uses geometries
-        try:
-            iter(coordinates)
-        except TypeError:
-            # likely not an iterable
-            # this is a check that rtree does, we mimic it
-            # to ensure a useful failure message
-            raise TypeError(
-                "Invalid coordinates, must be iterable in format "
-                "(minx, miny, maxx, maxy) (for bounds) or (x, y) (for points). "
-                "Got `coordinates` = {}.".format(coordinates)
-            )
-
-        # need to convert tuple of bounds to a geometry object
-        if len(coordinates) == 4:
-            indexes = self._tree.query(shapely.box(*coordinates))
-        elif len(coordinates) == 2:
-            indexes = self._tree.query(shapely.points(*coordinates))
-        else:
-            raise TypeError(
-                "Invalid coordinates, must be iterable in format "
-                "(minx, miny, maxx, maxy) (for bounds) or (x, y) (for points). "
-                "Got `coordinates` = {}.".format(coordinates)
-            )
-
-        return indexes
+        pass
 
     @property
     def size(self):
@@ -469,7 +330,7 @@ geometries}
         >>> s.sindex.size
         10
         """
-        return len(self._tree)
+        pass
 
     @property
     def is_empty(self):
@@ -499,7 +360,7 @@ geometries}
         >>> s2.sindex.is_empty
         True
         """
-        return len(self._tree) == 0
+        pass
 
     def __len__(self):
         return len(self._tree)

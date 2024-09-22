@@ -1,12 +1,9 @@
 import warnings
 from contextlib import contextmanager
 from functools import lru_cache
-
 import pandas as pd
-
 import shapely
 import shapely.wkb
-
 from geopandas import GeoDataFrame
 
 
@@ -27,22 +24,10 @@ def _get_conn(conn_or_engine):
     -------
     Connection
     """
-    from sqlalchemy.engine.base import Connection, Engine
-
-    if isinstance(conn_or_engine, Connection):
-        if not conn_or_engine.in_transaction():
-            with conn_or_engine.begin():
-                yield conn_or_engine
-        else:
-            yield conn_or_engine
-    elif isinstance(conn_or_engine, Engine):
-        with conn_or_engine.begin() as conn:
-            yield conn
-    else:
-        raise ValueError(f"Unknown Connectable: {conn_or_engine}")
+    pass
 
 
-def _df_to_geodf(df, geom_col="geom", crs=None, con=None):
+def _df_to_geodf(df, geom_col='geom', crs=None, con=None):
     """
     Transforms a pandas DataFrame into a GeoDataFrame.
     The column 'geom_col' must be a geometry column in WKB representation.
@@ -65,73 +50,11 @@ def _df_to_geodf(df, geom_col="geom", crs=None, con=None):
     -------
     GeoDataFrame
     """
-
-    if geom_col not in df:
-        raise ValueError("Query missing geometry column '{}'".format(geom_col))
-
-    if df.columns.to_list().count(geom_col) > 1:
-        raise ValueError(
-            f"Duplicate geometry column '{geom_col}' detected in SQL query output. Only"
-            "one geometry column is allowed."
-        )
-
-    geoms = df[geom_col].dropna()
-
-    if not geoms.empty:
-        load_geom_bytes = shapely.wkb.loads
-        """Load from Python 3 binary."""
-
-        def load_geom_text(x):
-            """Load from binary encoded as text."""
-            return shapely.wkb.loads(str(x), hex=True)
-
-        if isinstance(geoms.iat[0], bytes):
-            load_geom = load_geom_bytes
-        else:
-            load_geom = load_geom_text
-
-        df[geom_col] = geoms = geoms.apply(load_geom)
-        if crs is None:
-            srid = shapely.get_srid(geoms.iat[0])
-            # if no defined SRID in geodatabase, returns SRID of 0
-            if srid != 0:
-                try:
-                    spatial_ref_sys_df = _get_spatial_ref_sys_df(con, srid)
-                except pd.errors.DatabaseError:
-                    warning_msg = (
-                        f"Could not find the spatial reference system table "
-                        f"(spatial_ref_sys) in PostGIS."
-                        f"Trying epsg:{srid} as a fallback."
-                    )
-                    warnings.warn(warning_msg, UserWarning, stacklevel=3)
-                    crs = "epsg:{}".format(srid)
-                else:
-                    if not spatial_ref_sys_df.empty:
-                        auth_name = spatial_ref_sys_df["auth_name"].item()
-                        crs = f"{auth_name}:{srid}"
-                    else:
-                        warning_msg = (
-                            f"Could not find srid {srid} in the "
-                            f"spatial_ref_sys table. "
-                            f"Trying epsg:{srid} as a fallback."
-                        )
-                        warnings.warn(warning_msg, UserWarning, stacklevel=3)
-                        crs = "epsg:{}".format(srid)
-
-    return GeoDataFrame(df, crs=crs, geometry=geom_col)
+    pass
 
 
-def _read_postgis(
-    sql,
-    con,
-    geom_col="geom",
-    crs=None,
-    index_col=None,
-    coerce_float=True,
-    parse_dates=None,
-    params=None,
-    chunksize=None,
-):
+def _read_postgis(sql, con, geom_col='geom', crs=None, index_col=None,
+    coerce_float=True, parse_dates=None, params=None, chunksize=None):
     """
     Returns a GeoDataFrame corresponding to the result of the query
     string, which must contain a geometry column in WKB representation.
@@ -179,34 +102,7 @@ def _read_postgis(
     >>> sql = "SELECT ST_AsBinary(geom) AS geom, highway FROM roads"
     >>> df = geopandas.read_postgis(sql, con)  # doctest: +SKIP
     """
-
-    if chunksize is None:
-        # read all in one chunk and return a single GeoDataFrame
-        df = pd.read_sql(
-            sql,
-            con,
-            index_col=index_col,
-            coerce_float=coerce_float,
-            parse_dates=parse_dates,
-            params=params,
-            chunksize=chunksize,
-        )
-        return _df_to_geodf(df, geom_col=geom_col, crs=crs, con=con)
-
-    else:
-        # read data in chunks and return a generator
-        df_generator = pd.read_sql(
-            sql,
-            con,
-            index_col=index_col,
-            coerce_float=coerce_float,
-            parse_dates=parse_dates,
-            params=params,
-            chunksize=chunksize,
-        )
-        return (
-            _df_to_geodf(df, geom_col=geom_col, crs=crs, con=con) for df in df_generator
-        )
+    pass
 
 
 def _get_geometry_type(gdf):
@@ -228,131 +124,23 @@ def _get_geometry_type(gdf):
      - if any of the geometries has Z-coordinate, all records will
        be written with 3D.
     """
-    geom_types = list(gdf.geometry.geom_type.unique())
-    has_curve = False
-
-    for gt in geom_types:
-        if gt is None:
-            continue
-        elif "LinearRing" in gt:
-            has_curve = True
-
-    if len(geom_types) == 1:
-        if has_curve:
-            target_geom_type = "LINESTRING"
-        else:
-            if geom_types[0] is None:
-                raise ValueError("No valid geometries in the data.")
-            else:
-                target_geom_type = geom_types[0].upper()
-    else:
-        target_geom_type = "GEOMETRY"
-
-    # Check for 3D-coordinates
-    if any(gdf.geometry.has_z):
-        target_geom_type += "Z"
-
-    return target_geom_type, has_curve
+    pass
 
 
 def _get_srid_from_crs(gdf):
     """
     Get EPSG code from CRS if available. If not, return 0.
     """
-
-    # Use geoalchemy2 default for srid
-    # Note: undefined srid in PostGIS is 0
-    srid = None
-    warning_msg = (
-        "Could not parse CRS from the GeoDataFrame. "
-        "Inserting data without defined CRS."
-    )
-    if gdf.crs is not None:
-        try:
-            for confidence in (100, 70, 25):
-                srid = gdf.crs.to_epsg(min_confidence=confidence)
-                if srid is not None:
-                    break
-                auth_srid = gdf.crs.to_authority(
-                    auth_name="ESRI", min_confidence=confidence
-                )
-                if auth_srid is not None:
-                    srid = int(auth_srid[1])
-                    break
-        except Exception:
-            warnings.warn(warning_msg, UserWarning, stacklevel=2)
-
-    if srid is None:
-        srid = 0
-        warnings.warn(warning_msg, UserWarning, stacklevel=2)
-
-    return srid
-
-
-def _convert_linearring_to_linestring(gdf, geom_name):
-    from shapely.geometry import LineString
-
-    # Todo: Use shapely function once it's implemented:
-    # https://github.com/shapely/shapely/issues/1617
-
-    mask = gdf.geom_type == "LinearRing"
-    gdf.loc[mask, geom_name] = gdf.loc[mask, geom_name].apply(
-        lambda geom: LineString(geom)
-    )
-    return gdf
+    pass
 
 
 def _convert_to_ewkb(gdf, geom_name, srid):
     """Convert geometries to ewkb."""
-    geoms = shapely.to_wkb(
-        shapely.set_srid(gdf[geom_name].values._data, srid=srid),
-        hex=True,
-        include_srid=True,
-    )
-
-    # The gdf will warn that the geometry column doesn't hold in-memory geometries
-    # now that they are EWKB, so convert back to a regular dataframe to avoid warning
-    # the user that the dtypes are unexpected.
-    df = pd.DataFrame(gdf, copy=False)
-    df[geom_name] = geoms
-    return df
+    pass
 
 
-def _psql_insert_copy(tbl, conn, keys, data_iter):
-    import csv
-    import io
-
-    s_buf = io.StringIO()
-    writer = csv.writer(s_buf)
-    writer.writerows(data_iter)
-    s_buf.seek(0)
-
-    columns = ", ".join('"{}"'.format(k) for k in keys)
-
-    dbapi_conn = conn.connection
-    sql = 'COPY "{}"."{}" ({}) FROM STDIN WITH CSV'.format(
-        tbl.table.schema, tbl.table.name, columns
-    )
-    with dbapi_conn.cursor() as cur:
-        # Use psycopg method if it's available
-        if hasattr(cur, "copy") and callable(cur.copy):
-            with cur.copy(sql) as copy:
-                copy.write(s_buf.read())
-        else:  # otherwise use psycopg2 method
-            cur.copy_expert(sql, s_buf)
-
-
-def _write_postgis(
-    gdf,
-    name,
-    con,
-    schema=None,
-    if_exists="fail",
-    index=False,
-    index_label=None,
-    chunksize=None,
-    dtype=None,
-):
+def _write_postgis(gdf, name, con, schema=None, if_exists='fail', index=
+    False, index_label=None, chunksize=None, dtype=None):
     """
     Upload GeoDataFrame into PostGIS database.
 
@@ -392,82 +180,7 @@ def _write_postgis(
     --------
 
     >>> from sqlalchemy import create_engine  # doctest: +SKIP
-    >>> engine = create_engine("postgresql://myusername:mypassword@myhost:5432\
-/mydatabase";)  # doctest: +SKIP
+    >>> engine = create_engine("postgresql://myusername:mypassword@myhost:5432/mydatabase";)  # doctest: +SKIP
     >>> gdf.to_postgis("my_table", engine)  # doctest: +SKIP
     """
-    try:
-        from geoalchemy2 import Geometry
-        from sqlalchemy import text
-    except ImportError:
-        raise ImportError("'to_postgis()' requires geoalchemy2 package.")
-
-    gdf = gdf.copy()
-    geom_name = gdf.geometry.name
-
-    # Get srid
-    srid = _get_srid_from_crs(gdf)
-
-    # Get geometry type and info whether data contains LinearRing.
-    geometry_type, has_curve = _get_geometry_type(gdf)
-
-    # Build dtype with Geometry
-    if dtype is not None:
-        dtype[geom_name] = Geometry(geometry_type=geometry_type, srid=srid)
-    else:
-        dtype = {geom_name: Geometry(geometry_type=geometry_type, srid=srid)}
-
-    # Convert LinearRing geometries to LineString
-    if has_curve:
-        gdf = _convert_linearring_to_linestring(gdf, geom_name)
-
-    # Convert geometries to EWKB
-    gdf = _convert_to_ewkb(gdf, geom_name, srid)
-
-    if schema is not None:
-        schema_name = schema
-    else:
-        schema_name = "public"
-
-    if if_exists == "append":
-        # Check that the geometry srid matches with the current GeoDataFrame
-        with _get_conn(con) as connection:
-            # Only check SRID if table exists
-            if connection.dialect.has_table(connection, name, schema):
-                target_srid = connection.execute(
-                    text(
-                        "SELECT Find_SRID('{schema}', '{table}', '{geom_col}');".format(
-                            schema=schema_name, table=name, geom_col=geom_name
-                        )
-                    )
-                ).fetchone()[0]
-
-                if target_srid != srid:
-                    msg = (
-                        "The CRS of the target table (EPSG:{epsg_t}) differs from the "
-                        "CRS of current GeoDataFrame (EPSG:{epsg_src}).".format(
-                            epsg_t=target_srid, epsg_src=srid
-                        )
-                    )
-                    raise ValueError(msg)
-
-    with _get_conn(con) as connection:
-        gdf.to_sql(
-            name,
-            connection,
-            schema=schema_name,
-            if_exists=if_exists,
-            index=index,
-            index_label=index_label,
-            chunksize=chunksize,
-            dtype=dtype,
-            method=_psql_insert_copy,
-        )
-
-
-@lru_cache
-def _get_spatial_ref_sys_df(con, srid):
-    spatial_ref_sys_sql = (
-        f"SELECT srid, auth_name FROM spatial_ref_sys WHERE srid = {srid}"
-    )
-    return pd.read_sql(spatial_ref_sys_sql, con)
+    pass

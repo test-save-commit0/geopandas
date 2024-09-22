@@ -1,14 +1,11 @@
 import warnings
 from warnings import warn
-
 import numpy as np
 import pandas as pd
 from pandas import DataFrame, Series
-
 import shapely
 from shapely.geometry import MultiPoint, box
 from shapely.geometry.base import BaseGeometry
-
 from . import _compat as compat
 from .array import GeometryArray, GeometryDtype, points_from_xy
 
@@ -19,108 +16,26 @@ def is_geometry_type(data):
 
     Does not include object array of shapely scalars.
     """
-    if isinstance(getattr(data, "dtype", None), GeometryDtype):
-        # GeometryArray, GeoSeries and Series[GeometryArray]
-        return True
-    else:
-        return False
-
-
-def _delegate_binary_method(op, this, other, align, *args, **kwargs):
-    # type: (str, GeoSeries, GeoSeries) -> GeoSeries/Series
-    if align is None:
-        align = True
-        maybe_warn = True
-    else:
-        maybe_warn = False
-    this = this.geometry
-    if isinstance(other, GeoPandasBase):
-        if align and not this.index.equals(other.index):
-            if maybe_warn:
-                warn(
-                    "The indices of the left and right GeoSeries' are not equal, and "
-                    "therefore they will be aligned (reordering and/or introducing "
-                    "missing values) before executing the operation. If this alignment "
-                    "is the desired behaviour, you can silence this warning by passing "
-                    "'align=True'. If you don't want alignment and protect yourself of "
-                    "accidentally aligning, you can pass 'align=False'.",
-                    stacklevel=4,
-                )
-            this, other = this.align(other.geometry)
-        else:
-            other = other.geometry
-
-        a_this = GeometryArray(this.values)
-        other = GeometryArray(other.values)
-    elif isinstance(other, BaseGeometry):
-        a_this = GeometryArray(this.values)
-    else:
-        raise TypeError(type(this), type(other))
-
-    data = getattr(a_this, op)(other, *args, **kwargs)
-    return data, this.index
+    pass
 
 
 def _binary_geo(op, this, other, align, *args, **kwargs):
-    # type: (str, GeoSeries, GeoSeries) -> GeoSeries
     """Binary operation on GeoSeries objects that returns a GeoSeries"""
-    from .geoseries import GeoSeries
-
-    geoms, index = _delegate_binary_method(op, this, other, align, *args, **kwargs)
-    return GeoSeries(geoms, index=index, crs=this.crs)
+    pass
 
 
 def _binary_op(op, this, other, align, *args, **kwargs):
-    # type: (str, GeoSeries, GeoSeries, args/kwargs) -> Series[bool/float]
     """Binary operation on GeoSeries objects that returns a Series"""
-    data, index = _delegate_binary_method(op, this, other, align, *args, **kwargs)
-    return Series(data, index=index)
-
-
-def _delegate_property(op, this):
-    # type: (str, GeoSeries) -> GeoSeries/Series
-    a_this = GeometryArray(this.geometry.values)
-    data = getattr(a_this, op)
-    if isinstance(data, GeometryArray):
-        from .geoseries import GeoSeries
-
-        return GeoSeries(data, index=this.index, crs=this.crs)
-    else:
-        return Series(data, index=this.index)
+    pass
 
 
 def _delegate_geo_method(op, this, **kwargs):
-    # type: (str, GeoSeries) -> GeoSeries
     """Unary operation that returns a GeoSeries"""
-    from .geodataframe import GeoDataFrame
-    from .geoseries import GeoSeries
-
-    if isinstance(this, GeoSeries):
-        klass, var_name = "GeoSeries", "gs"
-    elif isinstance(this, GeoDataFrame):
-        klass, var_name = "GeoDataFrame", "gdf"
-    else:
-        klass, var_name = this.__class__.__name__, "this"
-
-    for key, val in kwargs.items():
-        if isinstance(val, pd.Series):
-            if not val.index.equals(this.index):
-                raise ValueError(
-                    f"Index of the Series passed as '{key}' does not match index of "
-                    f"the {klass}. If you want both Series to be aligned, align them "
-                    f"before passing them to this method as "
-                    f"`{var_name}, {key} = {var_name}.align({key})`. If "
-                    f"you want to ignore the index, pass the underlying array as "
-                    f"'{key}' using `{key}.values`."
-                )
-            kwargs[key] = np.asarray(val)
-
-    a_this = GeometryArray(this.geometry.values)
-    data = getattr(a_this, op)(**kwargs)
-    return GeoSeries(data, index=this.index, crs=this.crs)
+    pass
 
 
 class GeoPandasBase(object):
+
     @property
     def area(self):
         """Returns a ``Series`` containing the area of each geometry in the
@@ -168,7 +83,7 @@ class GeoPandasBase(object):
         Every operation in GeoPandas is planar, i.e. the potential third
         dimension is not taken into account.
         """
-        return _delegate_property("area", self)
+        pass
 
     @property
     def crs(self):
@@ -203,12 +118,12 @@ class GeoPandasBase(object):
         GeoSeries.set_crs : assign CRS
         GeoSeries.to_crs : re-project to another CRS
         """
-        return self.geometry.values.crs
+        pass
 
     @crs.setter
     def crs(self, value):
         """Sets the value of the crs"""
-        self.geometry.values.crs = value
+        pass
 
     @property
     def geom_type(self):
@@ -228,12 +143,12 @@ class GeoPandasBase(object):
         2    LineString
         dtype: object
         """
-        return _delegate_property("geom_type", self)
+        pass
 
     @property
     def type(self):
         """Return the geometry type of each geometry in the GeoSeries"""
-        return self.geom_type
+        pass
 
     @property
     def length(self):
@@ -246,8 +161,7 @@ class GeoPandasBase(object):
         Examples
         --------
 
-        >>> from shapely.geometry import Polygon, LineString, MultiLineString, Point, \
-GeometryCollection
+        >>> from shapely.geometry import Polygon, LineString, MultiLineString, Point, GeometryCollection
         >>> s = geopandas.GeoSeries(
         ...     [
         ...         LineString([(0, 0), (1, 1), (0, 1)]),
@@ -255,8 +169,7 @@ GeometryCollection
         ...         MultiLineString([((0, 0), (1, 0)), ((-1, 0), (1, 0))]),
         ...         Polygon([(0, 0), (1, 1), (0, 1)]),
         ...         Point(0, 1),
-        ...         GeometryCollection([Point(1, 0), LineString([(10, 0), (10, 5), (0,\
- 0)])])
+        ...         GeometryCollection([Point(1, 0), LineString([(10, 0), (10, 5), (0, 0)])])
         ...     ]
         ... )
         >>> s
@@ -291,7 +204,7 @@ GeometryCollection
         dimension is not taken into account.
 
         """
-        return _delegate_property("length", self)
+        pass
 
     @property
     def is_valid(self):
@@ -331,7 +244,7 @@ GeometryCollection
         --------
         GeoSeries.is_valid_reason : reason for invalidity
         """
-        return _delegate_property("is_valid", self)
+        pass
 
     def is_valid_reason(self):
         """Returns a ``Series`` of strings with the reason for invalidity of
@@ -371,7 +284,7 @@ GeometryCollection
         GeoSeries.is_valid : detect invalid geometries
         GeoSeries.make_valid : fix invalid geometries
         """
-        return Series(self.geometry.values.is_valid_reason(), index=self.index)
+        pass
 
     @property
     def is_empty(self):
@@ -403,7 +316,7 @@ GeometryCollection
         --------
         GeoSeries.isna : detect missing values
         """
-        return _delegate_property("is_empty", self)
+        pass
 
     def count_coordinates(self):
         """
@@ -446,7 +359,7 @@ GeometryCollection
         GeoSeries.get_coordinates : extract coordinates as a :class:`~pandas.DataFrame`
         GoSeries.count_geometries : count the number of geometries in a collection
         """
-        return Series(self.geometry.values.count_coordinates(), index=self.index)
+        pass
 
     def count_geometries(self):
         """
@@ -490,7 +403,7 @@ GeometryCollection
         GeoSeries.count_coordinates : count the number of coordinates in a geometry
         GeoSeries.count_interior_rings : count the number of interior rings
         """
-        return Series(self.geometry.values.count_geometries(), index=self.index)
+        pass
 
     def count_interior_rings(self):
         """
@@ -535,7 +448,7 @@ GeometryCollection
         GeoSeries.count_coordinates : count the number of coordinates in a geometry
         GeoSeries.count_geometries : count the number of geometries in a collection
         """
-        return Series(self.geometry.values.count_interior_rings(), index=self.index)
+        pass
 
     @property
     def is_simple(self):
@@ -563,7 +476,7 @@ GeometryCollection
         1     True
         dtype: bool
         """
-        return _delegate_property("is_simple", self)
+        pass
 
     @property
     def is_ring(self):
@@ -598,7 +511,7 @@ GeometryCollection
         dtype: bool
 
         """
-        return _delegate_property("is_ring", self)
+        pass
 
     @property
     def is_ccw(self):
@@ -639,7 +552,7 @@ GeometryCollection
         3    False
         dtype: bool
         """
-        return _delegate_property("is_ccw", self)
+        pass
 
     @property
     def is_closed(self):
@@ -673,7 +586,7 @@ GeometryCollection
         3    False
         dtype: bool
         """
-        return _delegate_property("is_closed", self)
+        pass
 
     @property
     def has_z(self):
@@ -704,7 +617,7 @@ GeometryCollection
         1     True
         dtype: bool
         """
-        return _delegate_property("has_z", self)
+        pass
 
     def get_precision(self):
         """Returns a ``Series`` of the precision of each geometry.
@@ -754,7 +667,7 @@ GeometryCollection
         --------
         GeoSeries.set_precision : set precision grid size
         """
-        return Series(self.geometry.values.get_precision(), index=self.index)
+        pass
 
     def get_geometry(self, index):
         """Returns the n-th geometry from a collection of geometries.
@@ -810,11 +723,7 @@ GeometryCollection
         dtype: geometry
 
         """
-        return _delegate_geo_method("get_geometry", self, index=index)
-
-    #
-    # Unary operations that return a GeoSeries
-    #
+        pass
 
     @property
     def boundary(self):
@@ -849,7 +758,7 @@ GeometryCollection
         GeoSeries.exterior : outer boundary (without interior rings)
 
         """
-        return _delegate_property("boundary", self)
+        pass
 
     @property
     def centroid(self):
@@ -885,7 +794,7 @@ GeometryCollection
         --------
         GeoSeries.representative_point : point guaranteed to be within each geometry
         """
-        return _delegate_property("centroid", self)
+        pass
 
     def concave_hull(self, ratio=0.0, allow_holes=False):
         """Returns a ``GeoSeries`` of geometries representing the concave hull
@@ -947,9 +856,7 @@ GeometryCollection
         GeoSeries.convex_hull : convex hull geometry
 
         """
-        return _delegate_geo_method(
-            "concave_hull", self, ratio=ratio, allow_holes=allow_holes
-        )
+        pass
 
     @property
     def convex_hull(self):
@@ -996,7 +903,7 @@ GeometryCollection
         GeoSeries.envelope : bounding rectangle geometry
 
         """
-        return _delegate_property("convex_hull", self)
+        pass
 
     def delaunay_triangles(self, tolerance=0.0, only_edges=False):
         """Returns a ``GeoSeries`` consisting of objects representing
@@ -1087,18 +994,10 @@ GeometryCollection
         --------
         GeoSeries.voronoi_polygons : Voronoi diagram around vertices
         """
-        from .geoseries import GeoSeries
+        pass
 
-        geometry_input = shapely.geometrycollections(self.geometry.values._data)
-
-        delaunay = shapely.delaunay_triangles(
-            geometry_input,
-            tolerance=tolerance,
-            only_edges=only_edges,
-        )
-        return GeoSeries(delaunay, crs=self.crs).explode(ignore_index=True)
-
-    def voronoi_polygons(self, tolerance=0.0, extend_to=None, only_edges=False):
+    def voronoi_polygons(self, tolerance=0.0, extend_to=None, only_edges=False
+        ):
         """Returns a ``GeoSeries`` consisting of objects representing
         the computed Voronoi diagram around the vertices of an input geometry.
 
@@ -1211,18 +1110,7 @@ GeometryCollection
         --------
         GeoSeries.delaunay_triangles : Delaunay triangulation around vertices
         """
-        from .geoseries import GeoSeries
-
-        geometry_input = shapely.geometrycollections(self.geometry.values._data)
-
-        voronoi = shapely.voronoi_polygons(
-            geometry_input,
-            tolerance=tolerance,
-            extend_to=extend_to,
-            only_edges=only_edges,
-        )
-
-        return GeoSeries(voronoi, crs=self.crs).explode(ignore_index=True)
+        pass
 
     @property
     def envelope(self):
@@ -1263,7 +1151,7 @@ GeometryCollection
         --------
         GeoSeries.convex_hull : convex hull geometry
         """
-        return _delegate_property("envelope", self)
+        pass
 
     def minimum_rotated_rectangle(self):
         """Returns a ``GeoSeries`` of the general minimum bounding rectangle
@@ -1303,7 +1191,7 @@ GeometryCollection
         --------
         GeoSeries.envelope : bounding rectangle
         """
-        return _delegate_geo_method("minimum_rotated_rectangle", self)
+        pass
 
     @property
     def exterior(self):
@@ -1341,8 +1229,7 @@ GeometryCollection
         GeoSeries.boundary : complete set-theoretic boundary
         GeoSeries.interiors : list of inner rings of each polygon
         """
-        # TODO: return empty geometry for non-polygons
-        return _delegate_property("exterior", self)
+        pass
 
     def extract_unique_points(self):
         """Returns a ``GeoSeries`` of MultiPoints representing all
@@ -1373,9 +1260,10 @@ GeometryCollection
 
         GeoSeries.get_coordinates : extract coordinates as a :class:`~pandas.DataFrame`
         """
-        return _delegate_geo_method("extract_unique_points", self)
+        pass
 
-    def offset_curve(self, distance, quad_segs=8, join_style="round", mitre_limit=5.0):
+    def offset_curve(self, distance, quad_segs=8, join_style='round',
+        mitre_limit=5.0):
         """Returns a ``LineString`` or ``MultiLineString`` geometry at a
         distance from the object on its right or its left side.
 
@@ -1417,14 +1305,7 @@ GeometryCollection
         0    LINESTRING (-1 0, -1 1, -0.981 1.195, -0.924 1...
         dtype: geometry
         """
-        return _delegate_geo_method(
-            "offset_curve",
-            self,
-            distance=distance,
-            quad_segs=quad_segs,
-            join_style=join_style,
-            mitre_limit=mitre_limit,
-        )
+        pass
 
     @property
     def interiors(self):
@@ -1465,7 +1346,7 @@ GeometryCollection
         --------
         GeoSeries.exterior : outer boundary
         """
-        return _delegate_property("interiors", self)
+        pass
 
     def remove_repeated_points(self, tolerance=0.0):
         """Returns a ``GeoSeries`` containing a copy of the input geometry
@@ -1503,9 +1384,9 @@ GeometryCollection
         1    POLYGON ((0 0, 0 0.5, 0 1, 0.5 1, 0 0))
         dtype: geometry
         """
-        return _delegate_geo_method("remove_repeated_points", self, tolerance=tolerance)
+        pass
 
-    def set_precision(self, grid_size, mode="valid_output"):
+    def set_precision(self, grid_size, mode='valid_output'):
         """Returns a ``GeoSeries`` with the precision set to a precision grid size.
 
         By default, geometries use double precision coordinates (``grid_size=0``).
@@ -1590,9 +1471,7 @@ GeometryCollection
         :meth:`~GeoSeries.make_valid` methods.
 
         """
-        return _delegate_geo_method(
-            "set_precision", self, grid_size=grid_size, mode=mode
-        )
+        pass
 
     def representative_point(self):
         """Returns a ``GeoSeries`` of (cheaply computed) points that are
@@ -1625,7 +1504,7 @@ GeometryCollection
         --------
         GeoSeries.centroid : geometric centroid
         """
-        return _delegate_geo_method("representative_point", self)
+        pass
 
     def minimum_bounding_circle(self):
         """Returns a ``GeoSeries`` of geometries representing the minimum bounding
@@ -1658,7 +1537,7 @@ GeometryCollection
         --------
         GeoSeries.convex_hull : convex hull geometry
         """
-        return _delegate_geo_method("minimum_bounding_circle", self)
+        pass
 
     def minimum_bounding_radius(self):
         """Returns a `Series` of the radii of the minimum bounding circles
@@ -1691,7 +1570,7 @@ GeometryCollection
         GeoSeries.minumum_bounding_circle : minimum bounding circle (geometry)
 
         """
-        return Series(self.geometry.values.minimum_bounding_radius(), index=self.index)
+        pass
 
     def minimum_clearance(self):
         """Returns a ``Series`` containing the minimum clearance distance,
@@ -1724,7 +1603,7 @@ GeometryCollection
         2         inf
         dtype: float64
         """
-        return Series(self.geometry.values.minimum_clearance(), index=self.index)
+        pass
 
     def normalize(self):
         """Returns a ``GeoSeries`` of normalized
@@ -1757,7 +1636,7 @@ GeometryCollection
         2                       POINT (0 0)
         dtype: geometry
         """
-        return _delegate_geo_method("normalize", self)
+        pass
 
     def make_valid(self):
         """
@@ -1795,7 +1674,7 @@ GeometryCollection
         2                           LINESTRING (0 0, 1 1, 1 0)
         dtype: geometry
         """
-        return _delegate_geo_method("make_valid", self)
+        pass
 
     def reverse(self):
         """Returns a ``GeoSeries`` with the order of coordinates reversed.
@@ -1827,7 +1706,7 @@ GeometryCollection
         --------
         GeoSeries.normalize : normalize order of coordinates
         """
-        return _delegate_geo_method("reverse", self)
+        pass
 
     def segmentize(self, max_segment_length):
         """Returns a ``GeoSeries`` with vertices added to line segments based on
@@ -1867,9 +1746,7 @@ GeometryCollection
         1    POLYGON ((0 0, 5 0, 10 0, 10 5, 10 10, 5 10, 0...
         dtype: geometry
         """
-        return _delegate_geo_method(
-            "segmentize", self, max_segment_length=max_segment_length
-        )
+        pass
 
     def transform(self, transformation, include_z=False):
         """Returns a ``GeoSeries`` with the transformation function
@@ -1909,9 +1786,7 @@ GeometryCollection
         0    POINT Z (1 1 1)
         dtype: geometry
         """
-        return _delegate_geo_method(
-            "transform", self, transformation=transformation, include_z=include_z
-        )
+        pass
 
     def force_2d(self):
         """Forces the dimensionality of a geometry to 2D.
@@ -1944,7 +1819,7 @@ GeometryCollection
         2    POLYGON ((0 0, 0 10, 10 10, 0 0))
         dtype: geometry
         """
-        return _delegate_geo_method("force_2d", self)
+        pass
 
     def force_3d(self, z=0):
         """Forces the dimensionality of a geometry to 3D.
@@ -2007,7 +1882,7 @@ GeometryCollection
         3    POLYGON Z ((0 0 3, 0 10 3, 10 10 3, 0 0 3))
         dtype: geometry
         """
-        return _delegate_geo_method("force_3d", self, z=z)
+        pass
 
     def line_merge(self, directed=False):
         """Returns (Multi)LineStrings formed by combining the lines in a
@@ -2074,11 +1949,7 @@ GeometryCollection
         4                       GEOMETRYCOLLECTION EMPTY
         dtype: geometry
         """
-        return _delegate_geo_method("line_merge", self, directed=directed)
-
-    #
-    # Reduction operations that return a Shapely geometry
-    #
+        pass
 
     @property
     def unary_union(self):
@@ -2106,17 +1977,9 @@ GeometryCollection
         --------
         GeoSeries.union_all
         """
+        pass
 
-        warn(
-            "The 'unary_union' attribute is deprecated, "
-            "use the 'union_all()' method instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        return self.geometry.values.union_all()
-
-    def union_all(self, method="unary"):
+    def union_all(self, method='unary'):
         """Returns a geometry containing the union of all geometries in the
         ``GeoSeries``.
 
@@ -2149,7 +2012,7 @@ GeometryCollection
         >>> s.union_all()
         <POLYGON ((0 1, 0 2, 2 2, 2 0, 1 0, 0 0, 0 1))>
         """
-        return self.geometry.values.union_all(method=method)
+        pass
 
     def intersection_all(self):
         """Returns a geometry containing the intersection of all geometries in
@@ -2175,11 +2038,7 @@ GeometryCollection
         >>> s.intersection_all()
         <POLYGON ((1 1, 1 1.5, 1.5 1.5, 1.5 1, 1 1))>
         """
-        return self.geometry.values.intersection_all()
-
-    #
-    # Binary operations that return a pandas Series
-    #
+        pass
 
     def contains(self, other, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -2295,7 +2154,7 @@ GeometryCollection
         GeoSeries.contains_properly
         GeoSeries.within
         """
-        return _binary_op("contains", self, other, align)
+        pass
 
     def contains_properly(self, other, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -2416,7 +2275,7 @@ GeometryCollection
         --------
         GeoSeries.contains
         """
-        return _binary_op("contains_properly", self, other, align)
+        pass
 
     def dwithin(self, other, distance, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -2527,7 +2386,7 @@ GeometryCollection
         --------
         GeoSeries.within
         """
-        return _binary_op("dwithin", self, other, distance=distance, align=align)
+        pass
 
     def geom_equals(self, other, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -2637,7 +2496,7 @@ GeometryCollection
         GeoSeries.geom_equals_exact
 
         """
-        return _binary_op("geom_equals", self, other, align)
+        pass
 
     def geom_almost_equals(self, other, decimal=6, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` if
@@ -2705,16 +2564,7 @@ GeometryCollection
         GeoSeries.geom_equals_exact
 
         """
-        warnings.warn(
-            "The 'geom_almost_equals()' method is deprecated because the name is "
-            "confusing. The 'geom_equals_exact()' method should be used instead.",
-            FutureWarning,
-            stacklevel=2,
-        )
-        tolerance = 0.5 * 10 ** (-decimal)
-        return _binary_op(
-            "geom_equals_exact", self, other, tolerance=tolerance, align=align
-        )
+        pass
 
     def geom_equals_exact(self, other, tolerance, align=None):
         """Return True for all geometries that equal aligned *other* to a given
@@ -2777,9 +2627,7 @@ GeometryCollection
         --------
         GeoSeries.geom_equals
         """
-        return _binary_op(
-            "geom_equals_exact", self, other, tolerance=tolerance, align=align
-        )
+        pass
 
     def crosses(self, other, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -2891,7 +2739,7 @@ GeometryCollection
         GeoSeries.intersects
 
         """
-        return _binary_op("crosses", self, other, align)
+        pass
 
     def disjoint(self, other, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -2992,7 +2840,7 @@ GeometryCollection
         GeoSeries.touches
 
         """
-        return _binary_op("disjoint", self, other, align)
+        pass
 
     def intersects(self, other, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -3103,7 +2951,7 @@ GeometryCollection
         GeoSeries.touches
         GeoSeries.intersection
         """
-        return _binary_op("intersects", self, other, align)
+        pass
 
     def overlaps(self, other, align=None):
         """Returns True for all aligned geometries that overlap *other*, else False.
@@ -3214,7 +3062,7 @@ GeometryCollection
         GeoSeries.intersects
 
         """
-        return _binary_op("overlaps", self, other, align)
+        pass
 
     def touches(self, other, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -3326,7 +3174,7 @@ GeometryCollection
         GeoSeries.intersects
 
         """
-        return _binary_op("touches", self, other, align)
+        pass
 
     def within(self, other, align=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -3440,7 +3288,7 @@ GeometryCollection
         --------
         GeoSeries.contains
         """
-        return _binary_op("within", self, other, align)
+        pass
 
     def covers(self, other, align=None):
         """
@@ -3554,7 +3402,7 @@ GeometryCollection
         GeoSeries.covered_by
         GeoSeries.overlaps
         """
-        return _binary_op("covers", self, other, align)
+        pass
 
     def covered_by(self, other, align=None):
         """
@@ -3668,7 +3516,7 @@ GeometryCollection
         GeoSeries.covers
         GeoSeries.overlaps
         """
-        return _binary_op("covered_by", self, other, align)
+        pass
 
     def distance(self, other, align=None):
         """Returns a ``Series`` containing the distance to aligned `other`.
@@ -3764,7 +3612,7 @@ GeometryCollection
         3    1.000000
         dtype: float64
         """
-        return _binary_op("distance", self, other, align)
+        pass
 
     def hausdorff_distance(self, other, align=None, densify=None):
         """Returns a ``Series`` containing the Hausdorff distance to aligned `other`.
@@ -3879,7 +3727,7 @@ GeometryCollection
         0    70.0
         dtype: float64
         """
-        return _binary_op("hausdorff_distance", self, other, align, densify=densify)
+        pass
 
     def frechet_distance(self, other, align=None, densify=None):
         """Returns a ``Series`` containing the Frechet distance to aligned `other`.
@@ -3999,11 +3847,7 @@ GeometryCollection
         0    16.77051
         dtype: float64
         """
-        return _binary_op("frechet_distance", self, other, align, densify=densify)
-
-    #
-    # Binary operations that return a GeoSeries
-    #
+        pass
 
     def difference(self, other, align=None):
         """Returns a ``GeoSeries`` of the points in each aligned geometry that
@@ -4114,7 +3958,7 @@ GeometryCollection
         GeoSeries.union
         GeoSeries.intersection
         """
-        return _binary_geo("difference", self, other, align)
+        pass
 
     def symmetric_difference(self, other, align=None):
         """Returns a ``GeoSeries`` of the symmetric difference of points in
@@ -4229,7 +4073,7 @@ GeometryCollection
         GeoSeries.union
         GeoSeries.intersection
         """
-        return _binary_geo("symmetric_difference", self, other, align)
+        pass
 
     def union(self, other, align=None):
         """Returns a ``GeoSeries`` of the union of points in each aligned geometry with
@@ -4343,7 +4187,7 @@ GeometryCollection
         GeoSeries.difference
         GeoSeries.intersection
         """
-        return _binary_geo("union", self, other, align)
+        pass
 
     def intersection(self, other, align=None):
         """Returns a ``GeoSeries`` of the intersection of points in each
@@ -4456,7 +4300,7 @@ GeometryCollection
         GeoSeries.symmetric_difference
         GeoSeries.union
         """
-        return _binary_geo("intersection", self, other, align)
+        pass
 
     def clip_by_rect(self, xmin, ymin, xmax, ymax):
         """Returns a ``GeoSeries`` of the portions of geometry within the given
@@ -4521,11 +4365,7 @@ GeometryCollection
         --------
         GeoSeries.intersection
         """
-        from .geoseries import GeoSeries
-
-        geometry_array = GeometryArray(self.geometry.values)
-        clipped_geometry = geometry_array.clip_by_rect(xmin, ymin, xmax, ymax)
-        return GeoSeries(clipped_geometry, index=self.index, crs=self.crs)
+        pass
 
     def shortest_line(self, other, align=None):
         """
@@ -4628,7 +4468,7 @@ GeometryCollection
         4            LINESTRING (0 1, 0 1)
         dtype: geometry
         """
-        return _binary_geo("shortest_line", self, other, align)
+        pass
 
     def snap(self, other, tolerance, align=None):
         """Snaps an input geometry to reference geometry's vertices.
@@ -4729,7 +4569,7 @@ GeometryCollection
         2    POLYGON ((0 0, 0 10, 8 10, 10 10, 10 0, 0 0))
         dtype: geometry
         """
-        return _binary_geo("snap", self, other, align, tolerance=tolerance)
+        pass
 
     def shared_paths(self, other, align=None):
         """
@@ -4827,12 +4667,7 @@ GeometryCollection
         --------
         GeoSeries.get_geometry
         """
-
-        return _binary_geo("shared_paths", self, other, align)
-
-    #
-    # Other operations
-    #
+        pass
 
     @property
     def bounds(self):
@@ -4863,10 +4698,7 @@ GeometryCollection
         1  POLYGON ((0 0, 1 1, 1 0, 0 0))   0.0   0.0   1.0   1.0
         2           LINESTRING (0 1, 1 2)   0.0   1.0   1.0   2.0
         """
-        bounds = GeometryArray(self.geometry.values).bounds
-        return DataFrame(
-            bounds, columns=["minx", "miny", "maxx", "maxy"], index=self.index
-        )
+        pass
 
     @property
     def total_bounds(self):
@@ -4885,7 +4717,7 @@ GeometryCollection
         >>> gdf.total_bounds
         array([ 0., -1.,  3.,  2.])
         """
-        return GeometryArray(self.geometry.values).total_bounds
+        pass
 
     @property
     def sindex(self):
@@ -4937,7 +4769,7 @@ GeometryCollection
         array([[0],
                [2]])
         """
-        return self.geometry.values.sindex
+        pass
 
     @property
     def has_sindex(self):
@@ -4969,18 +4801,10 @@ GeometryCollection
             `True` if the spatial index has been generated or
             `False` if not.
         """
-        return self.geometry.values.has_sindex
+        pass
 
-    def buffer(
-        self,
-        distance,
-        resolution=16,
-        cap_style="round",
-        join_style="round",
-        mitre_limit=5.0,
-        single_sided=False,
-        **kwargs,
-    ):
+    def buffer(self, distance, resolution=16, cap_style='round', join_style
+        ='round', mitre_limit=5.0, single_sided=False, **kwargs):
         """Returns a ``GeoSeries`` of geometries representing all points within
         a given ``distance`` of each geometric object.
 
@@ -5045,17 +4869,7 @@ GeometryCollection
         .. plot:: _static/code/buffer.py
 
         """
-        return _delegate_geo_method(
-            "buffer",
-            self,
-            distance=distance,
-            resolution=resolution,
-            cap_style=cap_style,
-            join_style=join_style,
-            mitre_limit=mitre_limit,
-            single_sided=single_sided,
-            **kwargs,
-        )
+        pass
 
     def simplify(self, tolerance, preserve_topology=True):
         """Returns a ``GeoSeries`` containing a simplified representation of
@@ -5105,9 +4919,7 @@ GeometryCollection
         1              LINESTRING (0 0, 0 20)
         dtype: geometry
         """
-        return _delegate_geo_method(
-            "simplify", self, tolerance=tolerance, preserve_topology=preserve_topology
-        )
+        pass
 
     def relate(self, other, align=None):
         """
@@ -5212,7 +5024,7 @@ GeometryCollection
         dtype: object
 
         """
-        return _binary_op("relate", self, other, align)
+        pass
 
     def relate_pattern(self, other, pattern, align=None):
         """
@@ -5324,7 +5136,7 @@ GeometryCollection
         dtype: bool
 
         """
-        return _binary_op("relate_pattern", self, other, pattern=pattern, align=align)
+        pass
 
     def project(self, other, normalized=False, align=None):
         """
@@ -5423,7 +5235,7 @@ GeometryCollection
         --------
         GeoSeries.interpolate
         """
-        return _binary_op("project", self, other, normalized=normalized, align=align)
+        pass
 
     def interpolate(self, distance, normalized=False):
         """
@@ -5467,9 +5279,7 @@ GeometryCollection
         2                POINT (0 2)
         dtype: geometry
         """
-        return _delegate_geo_method(
-            "interpolate", self, distance=distance, normalized=normalized
-        )
+        pass
 
     def affine_transform(self, matrix):
         """Return a ``GeoSeries`` with translated geometries.
@@ -5510,8 +5320,8 @@ GeometryCollection
         2    POLYGON ((8 4, 13 10, 14 12, 8 4))
         dtype: geometry
 
-        """  # (E501 link is longer than max line length)
-        return _delegate_geo_method("affine_transform", self, matrix=matrix)
+        """
+        pass
 
     def translate(self, xoff=0.0, yoff=0.0, zoff=0.0):
         """Returns a ``GeoSeries`` with translated geometries.
@@ -5548,10 +5358,10 @@ GeometryCollection
         2    POLYGON ((5 2, 6 3, 5 4, 5 2))
         dtype: geometry
 
-        """  # (E501 link is longer than max line length)
-        return _delegate_geo_method("translate", self, xoff=xoff, yoff=yoff, zoff=zoff)
+        """
+        pass
 
-    def rotate(self, angle, origin="center", use_radians=False):
+    def rotate(self, angle, origin='center', use_radians=False):
         """Returns a ``GeoSeries`` with rotated geometries.
 
         See http://shapely.readthedocs.io/en/latest/manual.html#shapely.affinity.rotate
@@ -5599,11 +5409,9 @@ GeometryCollection
         dtype: geometry
 
         """
-        return _delegate_geo_method(
-            "rotate", self, angle=angle, origin=origin, use_radians=use_radians
-        )
+        pass
 
-    def scale(self, xfact=1.0, yfact=1.0, zfact=1.0, origin="center"):
+    def scale(self, xfact=1.0, yfact=1.0, zfact=1.0, origin='center'):
         """Returns a ``GeoSeries`` with scaled geometries.
 
         The geometries can be scaled by different factors along each
@@ -5649,11 +5457,9 @@ GeometryCollection
         2    POLYGON ((6 -3, 8 0, 6 3, 6 -3))
         dtype: geometry
         """
-        return _delegate_geo_method(
-            "scale", self, xfact=xfact, yfact=yfact, zfact=zfact, origin=origin
-        )
+        pass
 
-    def skew(self, xs=0.0, ys=0.0, origin="center", use_radians=False):
+    def skew(self, xs=0.0, ys=0.0, origin='center', use_radians=False):
         """Returns a ``GeoSeries`` with skewed geometries.
 
         The geometries are sheared by angles along the x and y dimensions.
@@ -5702,9 +5508,7 @@ GeometryCollection
         2    POLYGON ((2 0.73205, 4 2.3094, 4 2.73205, 2 0....
         dtype: geometry
         """
-        return _delegate_geo_method(
-            "skew", self, xs=xs, ys=ys, origin=origin, use_radians=use_radians
-        )
+        pass
 
     @property
     def cx(self):
@@ -5741,9 +5545,10 @@ GeometryCollection
         dtype: geometry
 
         """
-        return _CoordinateIndexer(self)
+        pass
 
-    def get_coordinates(self, include_z=False, ignore_index=False, index_parts=False):
+    def get_coordinates(self, include_z=False, ignore_index=False,
+        index_parts=False):
         """Gets coordinates from a :class:`GeoSeries` as a :class:`~pandas.DataFrame` of
         floats.
 
@@ -5814,22 +5619,7 @@ GeometryCollection
           2  3.0  1.0
           3  3.0 -1.0
         """
-        coords, outer_idx = shapely.get_coordinates(
-            self.geometry.values._data, include_z=include_z, return_index=True
-        )
-
-        column_names = ["x", "y"]
-        if include_z:
-            column_names.append("z")
-
-        index = _get_index_for_parts(
-            self.index,
-            outer_idx,
-            ignore_index=ignore_index,
-            index_parts=index_parts,
-        )
-
-        return pd.DataFrame(coords, index=index, columns=column_names)
+        pass
 
     def hilbert_distance(self, total_bounds=None, level=16):
         """
@@ -5857,15 +5647,10 @@ GeometryCollection
         Series
             Series containing distance along the curve for geometry
         """
-        from geopandas.tools.hilbert_curve import _hilbert_distance
+        pass
 
-        distances = _hilbert_distance(
-            self.geometry.values, total_bounds=total_bounds, level=level
-        )
-
-        return pd.Series(distances, index=self.index, name="hilbert_distance")
-
-    def sample_points(self, size, method="uniform", seed=None, rng=None, **kwargs):
+    def sample_points(self, size, method='uniform', seed=None, rng=None, **
+        kwargs):
         """
         Sample points from each geometry.
 
@@ -5921,50 +5706,8 @@ GeometryCollection
         0    MULTIPOINT ((0.1045 -0.10294), (0.35249 -0.264...
         1    MULTIPOINT ((3.03261 -0.43069), (3.10068 0.114...
         Name: sampled_points, dtype: geometry
-        """  # noqa: E501
-        from .geoseries import GeoSeries
-        from .tools._random import uniform
-
-        if seed is not None:
-            warn(
-                "The 'seed' keyword is deprecated. Use 'rng' instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            rng = seed
-
-        if method == "uniform":
-            if pd.api.types.is_list_like(size):
-                result = [uniform(geom, s, rng) for geom, s in zip(self.geometry, size)]
-            else:
-                result = self.geometry.apply(uniform, size=size, rng=rng)
-
-        else:
-            pointpats = compat.import_optional_dependency(
-                "pointpats",
-                f"For complex sampling methods, the pointpats module is required. "
-                f"Your requested method, '{method}' was not a supported option "
-                f"and the pointpats package was not able to be imported.",
-            )
-
-            if not hasattr(pointpats.random, method):
-                raise AttributeError(
-                    f"pointpats.random module has no sampling method {method}."
-                    f"Consult the pointpats.random module documentation for"
-                    f" available random sampling methods."
-                )
-            sample_function = getattr(pointpats.random, method)
-            result = self.geometry.apply(
-                lambda x: (
-                    points_from_xy(
-                        *sample_function(x, size=size, **kwargs).T
-                    ).union_all()
-                    if not (x.is_empty or x is None or "Polygon" not in x.geom_type)
-                    else MultiPoint()
-                ),
-            )
-
-        return GeoSeries(result, name="sampled_points", crs=self.crs, index=self.index)
+        """
+        pass
 
     def build_area(self, node=True):
         """Creates an areal geometry formed by the constituent linework.
@@ -6015,17 +5758,7 @@ GeometryCollection
         Name: polygons, dtype: geometry
 
         """
-        from .geoseries import GeoSeries
-
-        if node:
-            geometry_input = self.geometry.union_all()
-        else:
-            geometry_input = shapely.geometrycollections(self.geometry.values._data)
-
-        polygons = shapely.build_area(geometry_input)
-        return GeoSeries(polygons, crs=self.crs, name="polygons").explode(
-            ignore_index=True
-        )
+        pass
 
     def polygonize(self, node=True, full=False):
         """Creates polygons formed from the linework of a GeoSeries.
@@ -6084,35 +5817,7 @@ GeometryCollection
         >>> polygons, cuts, dangles, invalid = s.polygonize(full=True)
 
         """
-        from .geoseries import GeoSeries
-
-        if node:
-            geometry_input = [self.geometry.union_all()]
-        else:
-            geometry_input = self.geometry.values
-
-        if full:
-            polygons, cuts, dangles, invalid = shapely.polygonize_full(geometry_input)
-
-            cuts = GeoSeries(cuts, crs=self.crs, name="cut_edges").explode(
-                ignore_index=True
-            )
-            dangles = GeoSeries(dangles, crs=self.crs, name="dangles").explode(
-                ignore_index=True
-            )
-            invalid = GeoSeries(invalid, crs=self.crs, name="invalid_rings").explode(
-                ignore_index=True
-            )
-            polygons = GeoSeries(polygons, crs=self.crs, name="polygons").explode(
-                ignore_index=True
-            )
-
-            return (polygons, cuts, dangles, invalid)
-
-        polygons = shapely.polygonize(geometry_input)
-        return GeoSeries(polygons, crs=self.crs, name="polygons").explode(
-            ignore_index=True
-        )
+        pass
 
 
 def _get_index_for_parts(orig_idx, outer_idx, ignore_index, index_parts):
@@ -6134,44 +5839,10 @@ def _get_index_for_parts(orig_idx, outer_idx, ignore_index, index_parts):
     pandas.Index
         index or multiindex
     """
-
-    if ignore_index:
-        return None
-    else:
-        if len(outer_idx):
-            # Generate inner index as a range per value of outer_idx
-            # 1. identify the start of each run of values in outer_idx
-            # 2. count number of values per run
-            # 3. use cumulative sums to create an incremental range
-            #    starting at 0 in each run
-            run_start = np.r_[True, outer_idx[:-1] != outer_idx[1:]]
-            counts = np.diff(np.r_[np.nonzero(run_start)[0], len(outer_idx)])
-            inner_index = (~run_start).cumsum(dtype=outer_idx.dtype)
-            inner_index -= np.repeat(inner_index[run_start], counts)
-
-        else:
-            inner_index = []
-
-        # extract original index values based on integer index
-        outer_index = orig_idx.take(outer_idx)
-
-        if index_parts:
-            nlevels = outer_index.nlevels
-            index_arrays = [outer_index.get_level_values(lvl) for lvl in range(nlevels)]
-            index_arrays.append(inner_index)
-
-            index = pd.MultiIndex.from_arrays(
-                index_arrays, names=list(orig_idx.names) + [None]
-            )
-
-        else:
-            index = outer_index
-
-    return index
+    pass
 
 
 class _CoordinateIndexer(object):
-    # see docstring GeoPandasBase.cx property above
 
     def __init__(self, obj):
         self.obj = obj
@@ -6179,24 +5850,17 @@ class _CoordinateIndexer(object):
     def __getitem__(self, key):
         obj = self.obj
         xs, ys = key
-        # handle numeric values as x and/or y coordinate index
         if type(xs) is not slice:
             xs = slice(xs, xs)
         if type(ys) is not slice:
             ys = slice(ys, ys)
-        # don't know how to handle step; should this raise?
         if xs.step is not None or ys.step is not None:
-            warn(
-                "Ignoring step - full interval is used.",
-                stacklevel=2,
-            )
-        if xs.start is None or xs.stop is None or ys.start is None or ys.stop is None:
+            warn('Ignoring step - full interval is used.', stacklevel=2)
+        if (xs.start is None or xs.stop is None or ys.start is None or ys.
+            stop is None):
             xmin, ymin, xmax, ymax = obj.total_bounds
-        bbox = box(
-            xs.start if xs.start is not None else xmin,
-            ys.start if ys.start is not None else ymin,
-            xs.stop if xs.stop is not None else xmax,
-            ys.stop if ys.stop is not None else ymax,
-        )
+        bbox = box(xs.start if xs.start is not None else xmin, ys.start if 
+            ys.start is not None else ymin, xs.stop if xs.stop is not None else
+            xmax, ys.stop if ys.stop is not None else ymax)
         idx = obj.intersects(bbox)
         return obj[idx]
