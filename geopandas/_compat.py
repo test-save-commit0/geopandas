@@ -33,7 +33,15 @@ def import_optional_dependency(name: str, extra: str=''):
     -------
     module
     """
-    pass
+    try:
+        module = importlib.import_module(name)
+        return module
+    except ImportError:
+        if extra:
+            msg = f"Missing optional dependency '{name}'. {extra}"
+        else:
+            msg = f"Missing optional dependency '{name}'. Use pip or conda to install {name}."
+        raise ImportError(msg) from None
 
 
 try:
