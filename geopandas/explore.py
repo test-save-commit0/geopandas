@@ -227,7 +227,24 @@ def _explore(df, column=None, cmap=None, color=None, m=None, tiles=
 
 def _tooltip_popup(type, fields, gdf, **kwds):
     """get tooltip or popup"""
-    pass
+    from folium.features import GeoJsonTooltip, GeoJsonPopup
+    
+    if isinstance(fields, bool):
+        if fields:
+            fields = gdf.columns.drop(gdf.geometry.name).tolist()
+        else:
+            return None
+    elif isinstance(fields, int):
+        fields = gdf.columns.drop(gdf.geometry.name).tolist()[:fields]
+    elif isinstance(fields, str):
+        fields = [fields]
+    
+    if type == 'tooltip':
+        return GeoJsonTooltip(fields=fields, **kwds)
+    elif type == 'popup':
+        return GeoJsonPopup(fields=fields, **kwds)
+    else:
+        raise ValueError("Type must be either 'tooltip' or 'popup'")
 
 
 def _categorical_legend(m, title, categories, colors):
@@ -251,7 +268,52 @@ def _categorical_legend(m, title, categories, colors):
     colors : list-like
         list of colors (in the same order as categories)
     """
-    pass
+    from branca.element import Template, MacroElement
+
+    template = """
+    {% macro html(this, kwargs) %}
+    <div style="
+        position: fixed; 
+        bottom: 50px; 
+        right: 50px; 
+        width: 120px; 
+        height: 90px; 
+        z-index:9999; 
+        font-size:14px;
+        ">
+        <p><a style="color: #0000ff; text-decoration: none; font-weight: bold; font-size: 14px;" href="#" onclick="toggle_legend(); return false;">Toggle Legend</a></p>
+        <div id="legend" style="background-color: #fff; padding: 10px; display:none;">
+            <div style='padding:3px; font-weight: bold;'>
+                {{ this.title }}
+            </div>
+            {% for label, color in this.categories_colors %}
+            <div>
+                <span style='background-color: {{ color }}; border: 1px solid #000; display: inline-block; width: 12px; height: 12px;'></span>
+                <span style='padding-left:5px;'>{{ label }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+    function toggle_legend() {
+        var legend = document.getElementById('legend');
+        if (legend.style.display === 'none') {
+            legend.style.display = 'block';
+        } else {
+            legend.style.display = 'none';
+        }
+    }
+    </script>
+    {% endmacro %}
+    """
+
+    macro = MacroElement()
+    macro._template = Template(template)
+    macro.title = title
+    macro.categories_colors = list(zip(categories, colors))
+
+    m.get_root().add_child(macro)
 
 
 def _explore_geoseries(s, color=None, m=None, tiles='OpenStreetMap', attr=
