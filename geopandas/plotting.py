@@ -25,7 +25,21 @@ def _sanitize_geoms(geoms, prefix='Multi'):
     component_index : index array
         indices are repeated for all components in the same Multi geometry
     """
-    pass
+    components = []
+    component_index = []
+
+    for idx, geom in enumerate(geoms):
+        if geom is None or geom.is_empty:
+            continue
+        if geom.type.startswith(prefix):
+            for part in geom.geoms:
+                components.append(part)
+                component_index.append(idx)
+        else:
+            components.append(geom)
+            component_index.append(idx)
+
+    return components, component_index
 
 
 def _expand_kwargs(kwargs, multiindex):
@@ -35,7 +49,12 @@ def _expand_kwargs(kwargs, multiindex):
     it (in place) to the correct length/formats with help of 'multiindex', unless
     the value appears to already be a valid (single) value for the key.
     """
-    pass
+    for key, value in kwargs.items():
+        if isinstance(value, (list, np.ndarray, pd.Series)):
+            if len(value) != len(multiindex):
+                kwargs[key] = [value[i] for i in multiindex]
+        elif not isinstance(value, (str, int, float, bool)):
+            kwargs[key] = [value for _ in multiindex]
 
 
 def _PolygonPatch(polygon, **kwargs):
@@ -54,7 +73,30 @@ def _PolygonPatch(polygon, **kwargs):
     (BSD license, https://pypi.org/project/descartes) for PolygonPatch, but
     this dependency was removed in favor of the below matplotlib code.
     """
-    pass
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path
+
+    def ring_coding(ob):
+        # The codes will be all "LINETO" commands, except for "MOVETO"s at the
+        # beginning of each subpath
+        n = len(ob.coords)
+        codes = np.ones(n, dtype=Path.code_type) * Path.LINETO
+        codes[0] = Path.MOVETO
+        return codes
+
+    def pathify(polygon):
+        # Convert coordinates to path vertices. Objects produced by Shapely's
+        # analytic methods have the proper coordinate order, no need to sort.
+        vertices = np.concatenate(
+            [np.asarray(polygon.exterior.coords)[:, :2]]
+            + [np.asarray(r.coords)[:, :2] for r in polygon.interiors])
+        codes = np.concatenate(
+            [ring_coding(polygon.exterior)]
+            + [ring_coding(r) for r in polygon.interiors])
+        return Path(vertices, codes)
+
+    path = pathify(polygon)
+    return PathPatch(path, **kwargs)
 
 
 def _plot_polygon_collection(ax, geoms, values=None, color=None, cmap=None,
@@ -87,7 +129,27 @@ def _plot_polygon_collection(ax, geoms, values=None, color=None, cmap=None,
     -------
     collection : matplotlib.collections.Collection that was plotted
     """
-    pass
+    from matplotlib.collections import PatchCollection
+    from matplotlib.colors import Normalize
+
+    geoms, multiindex = _sanitize_geoms(geoms)
+    _expand_kwargs(kwargs, multiindex)
+
+    patches = [_PolygonPatch(poly) for poly in geoms]
+    collection = PatchCollection(patches, **kwargs)
+
+    if values is not None:
+        values = np.take(values, multiindex)
+        collection.set_array(values)
+        collection.set_cmap(cmap)
+        collection.set_norm(Normalize(vmin=vmin, vmax=vmax))
+    elif color is not None:
+        collection.set_facecolor(color)
+        collection.set_edgecolor(color)
+
+    ax.add_collection(collection, autolim=autolim)
+
+    return collection
 
 
 def _plot_linestring_collection(ax, geoms, values=None, color=None, cmap=
