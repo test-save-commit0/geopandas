@@ -40,7 +40,7 @@ class SpatialIndex:
         >>> s.sindex.valid_query_predicates  # doctest: +SKIP
         {None, "contains", "contains_properly", "covered_by", "covers", "crosses", "dwithin", "intersects", "overlaps", "touches", "within"}
         """
-        pass
+        return PREDICATES
 
     def query(self, geometry, predicate=None, sort=False, distance=None,
         output_format='tuple'):
@@ -165,7 +165,31 @@ class SpatialIndex:
         geometries that can be joined based on overlapping bounding boxes or
         optional predicate are returned.
         """
-        pass
+        geometry_array = self._as_geometry_array(geometry)
+        
+        if predicate == 'dwithin' and distance is None:
+            raise ValueError("Distance is required for 'dwithin' predicate")
+        
+        if predicate not in self.valid_query_predicates:
+            raise ValueError(f"Invalid predicate: {predicate}")
+        
+        if predicate is None:
+            result = self._tree.query(geometry_array)
+        elif predicate == 'dwithin':
+            result = self._tree.query(geometry_array, predicate=predicate, distance=distance)
+        else:
+            result = self._tree.query(geometry_array, predicate=predicate)
+        
+        if sort:
+            result = np.sort(result, axis=1)
+        
+        if output_format == 'tuple':
+            return result
+        elif output_format == 'pandas':
+            import pandas as pd
+            return pd.DataFrame(result.T, columns=['input_index', 'tree_index'])
+        else:
+            raise ValueError(f"Invalid output_format: {output_format}")
 
     @staticmethod
     def _as_geometry_array(geometry):
@@ -182,7 +206,16 @@ class SpatialIndex:
         np.ndarray
             A numpy array of Shapely geometries.
         """
-        pass
+        if isinstance(geometry, BaseGeometry):
+            return np.array([geometry])
+        elif isinstance(geometry, (geoseries.GeoSeries, array.GeometryArray)):
+            return geometry.values
+        elif isinstance(geometry, np.ndarray) and isinstance(geometry[0], BaseGeometry):
+            return geometry
+        elif isinstance(geometry, list) and all(isinstance(g, BaseGeometry) for g in geometry):
+            return np.array(geometry)
+        else:
+            raise ValueError("Invalid geometry type. Expected Shapely geometry, GeoSeries, GeometryArray, or list/array of Shapely geometries.")
 
     def nearest(self, geometry, return_all=True, max_distance=None,
         return_distance=False, exclusive=False):
@@ -264,7 +297,18 @@ class SpatialIndex:
         array([[0, 1],
                [8, 9]])
         """
-        pass
+        geometry_array = self._as_geometry_array(geometry)
+        
+        if max_distance is not None and max_distance <= 0:
+            raise ValueError("max_distance must be greater than 0")
+        
+        result = self._tree.nearest(geometry_array, return_all=return_all, max_distance=max_distance, exclusive=exclusive)
+        
+        if return_distance:
+            indices, distances = result
+            return indices, distances
+        else:
+            return result
 
     def intersection(self, coordinates):
         """Compatibility wrapper for rtree.index.Index.intersection,
@@ -302,7 +346,14 @@ class SpatialIndex:
         array([1, 2, 3])
 
         """
-        pass
+        if len(coordinates) == 2:
+            # Point query
+            return self.query(shapely.Point(coordinates))
+        elif len(coordinates) == 4:
+            # Rectangle query
+            return self.query(shapely.box(*coordinates))
+        else:
+            raise ValueError("Invalid coordinates. Expected (x, y) for point or (min_x, min_y, max_x, max_y) for rectangle.")
 
     @property
     def size(self):
@@ -330,7 +381,7 @@ class SpatialIndex:
         >>> s.sindex.size
         10
         """
-        pass
+        return len(self._tree)
 
     @property
     def is_empty(self):
@@ -360,7 +411,7 @@ class SpatialIndex:
         >>> s2.sindex.is_empty
         True
         """
-        pass
+        return len(self._tree) == 0
 
     def __len__(self):
         return len(self._tree)
