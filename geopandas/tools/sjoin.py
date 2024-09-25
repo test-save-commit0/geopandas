@@ -117,7 +117,20 @@ def _basic_checks(left_df, right_df, how, lsuffix, rsuffix, on_attribute=None):
     on_attribute : list, default None
         list of column names to merge on along with geometry
     """
-    pass
+    if how not in ['left', 'right', 'inner']:
+        raise ValueError("`how` must be one of 'left', 'right', or 'inner'")
+
+    if f'index_{lsuffix}' in left_df.columns:
+        raise ValueError(f"'index_{lsuffix}' column already exists in left GeoDataFrame")
+
+    if f'index_{rsuffix}' in right_df.columns:
+        raise ValueError(f"'index_{rsuffix}' column already exists in right GeoDataFrame")
+
+    if on_attribute:
+        if not isinstance(on_attribute, (list, tuple)):
+            raise ValueError("`on_attribute` must be a list or tuple")
+        if not set(on_attribute).issubset(left_df.columns) or not set(on_attribute).issubset(right_df.columns):
+            raise ValueError("All `on_attribute` columns must exist in both GeoDataFrames")
 
 
 def _geom_predicate_query(left_df, right_df, predicate, distance,
@@ -140,7 +153,22 @@ def _geom_predicate_query(left_df, right_df, predicate, distance,
         DataFrame with matching indices in
         columns named `_key_left` and `_key_right`.
     """
-    pass
+    left_sindex = left_df.sindex
+    right_geom = right_df.geometry
+
+    if predicate == 'dwithin':
+        if distance is None:
+            raise ValueError("Distance must be provided for 'dwithin' predicate")
+        matches = left_sindex.query(right_geom, predicate=predicate, distance=distance)
+    else:
+        matches = left_sindex.query(right_geom, predicate=predicate)
+
+    left_idx, right_idx = matches
+
+    if on_attribute:
+        left_idx, right_idx = _filter_shared_attribute(left_df, right_df, left_idx, right_idx, on_attribute)
+
+    return pd.DataFrame({'_key_left': left_idx, '_key_right': right_idx})
 
 
 def _reset_index_with_suffix(df, suffix, other):
@@ -148,7 +176,18 @@ def _reset_index_with_suffix(df, suffix, other):
     Equivalent of df.reset_index(), but with adding 'suffix' to auto-generated
     column names.
     """
-    pass
+    df = df.reset_index()
+    if df.index.name:
+        df.index.name = f"{df.index.name}_{suffix}"
+    else:
+        df.index.name = f"index_{suffix}"
+
+    # Rename columns that conflict with the other DataFrame
+    for col in df.columns:
+        if col in other.columns:
+            df = df.rename(columns={col: f"{col}_{suffix}"})
+
+    return df
 
 
 def _process_column_names_with_suffix(left: pd.Index, right: pd.Index,
@@ -159,7 +198,30 @@ def _process_column_names_with_suffix(left: pd.Index, right: pd.Index,
     This is based on pandas' merge logic at https://github.com/pandas-dev/pandas/blob/
     a0779adb183345a8eb4be58b3ad00c223da58768/pandas/core/reshape/merge.py#L2300-L2370
     """
-    pass
+    to_rename = {
+        'left': {},
+        'right': {}
+    }
+
+    left_set = set(left) - {left_df._geometry_column_name}
+    right_set = set(right) - {right_df._geometry_column_name}
+    overlap = left_set.intersection(right_set)
+
+    if not overlap:
+        return to_rename
+
+    for name in overlap:
+        left_suffix, right_suffix = suffixes
+
+        if name in left_set:
+            left_name = f"{name}{left_suffix}"
+            to_rename['left'][name] = left_name
+
+        if name in right_set:
+            right_name = f"{name}{right_suffix}"
+            to_rename['right'][name] = right_name
+
+    return to_rename
 
 
 def _restore_index(joined, index_names, index_names_original):
@@ -167,7 +229,11 @@ def _restore_index(joined, index_names, index_names_original):
     Set back the the original index columns, and restoring their name as `None`
     if they didn't have a name originally.
     """
-    pass
+    joined = joined.set_index(index_names)
+    for i, name in enumerate(index_names_original):
+        if name is None:
+            joined.index.names[i] = None
+    return joined
 
 
 def _adjust_indexers(indices, distances, original_length, how, predicate):
@@ -176,7 +242,24 @@ def _adjust_indexers(indices, distances, original_length, how, predicate):
     For a left or right join, we need to adjust them to include the rows
     that would not be present in an inner join.
     """
-    pass
+    left_index, right_index = indices
+    if how == 'inner':
+        return left_index, right_index, distances
+
+    if how == 'left':
+        missing = np.setdiff1d(np.arange(original_length), left_index)
+        left_index = np.concatenate([left_index, missing])
+        right_index = np.concatenate([right_index, np.full(len(missing), -1)])
+        if distances is not None:
+            distances = np.concatenate([distances, np.full(len(missing), np.inf)])
+    elif how == 'right':
+        missing = np.setdiff1d(np.arange(original_length), right_index)
+        right_index = np.concatenate([right_index, missing])
+        left_index = np.concatenate([left_index, np.full(len(missing), -1)])
+        if distances is not None:
+            distances = np.concatenate([distances, np.full(len(missing), np.inf)])
+
+    return left_index, right_index, distances
 
 
 def _frame_join(left_df, right_df, indices, distances, how, lsuffix,
@@ -208,7 +291,42 @@ def _frame_join(left_df, right_df, indices, distances, how, lsuffix,
     GeoDataFrame
         Joined GeoDataFrame.
     """
-    pass
+    left_index, right_index = indices
+
+    # Prepare DataFrames for join
+    left = left_df.iloc[left_index].copy()
+    right = right_df.iloc[right_index].copy()
+
+    # Add distance column if provided
+    if distances is not None:
+        right['_distance'] = distances
+
+    # Rename conflicting columns
+    rename_dict = _process_column_names_with_suffix(left.columns, right.columns, (lsuffix, rsuffix), left_df, right_df)
+    left = left.rename(columns=rename_dict['left'])
+    right = right.rename(columns=rename_dict['right'])
+
+    # Perform join
+    if how == 'left':
+        joined = left.join(right, how='left', lsuffix=lsuffix, rsuffix=rsuffix)
+    elif how == 'right':
+        joined = right.join(left, how='left', lsuffix=rsuffix, rsuffix=lsuffix)
+    else:  # inner
+        joined = left.join(right, how='inner', lsuffix=lsuffix, rsuffix=rsuffix)
+
+    # Restore original index
+    if how in ('left', 'inner'):
+        joined.index = left_df.index[left_index]
+    else:  # right
+        joined.index = right_df.index[right_index]
+
+    # Set geometry column
+    if how in ('left', 'inner'):
+        joined.set_geometry(left_df._geometry_column_name, inplace=True)
+    else:  # right
+        joined.set_geometry(right_df._geometry_column_name, inplace=True)
+
+    return joined
 
 
 def _filter_shared_attribute(left_df, right_df, l_idx, r_idx, attribute):
