@@ -9,7 +9,10 @@ from geopandas.array import GeometryDtype
 
 def _isna(this):
     """isna version that works for both scalars and (Geo)Series"""
-    pass
+    if isinstance(this, (GeoSeries, pd.Series)):
+        return this.isna()
+    else:
+        return pd.isna(this)
 
 
 def _geom_equals_mask(this, that):
@@ -27,7 +30,20 @@ def _geom_equals_mask(this, that):
     Series
         boolean Series, True if geometries in left equal geometries in right
     """
-    pass
+    if isinstance(this, GeoSeries):
+        this = this.geometry
+    if isinstance(that, GeoSeries):
+        that = that.geometry
+
+    this_na = _isna(this)
+    that_na = _isna(that)
+    
+    empty_mask = this.is_empty | that.is_empty
+    na_mask = this_na | that_na
+    
+    equals_mask = this.equals(that)
+    
+    return (empty_mask & na_mask) | equals_mask
 
 
 def geom_equals(this, that):
@@ -45,7 +61,7 @@ def geom_equals(this, that):
     bool
         True if all geometries in left equal geometries in right
     """
-    pass
+    return _geom_equals_mask(this, that).all()
 
 
 def _geom_almost_equals_mask(this, that):
@@ -65,7 +81,20 @@ def _geom_almost_equals_mask(this, that):
     Series
         boolean Series, True if geometries in left almost equal geometries in right
     """
-    pass
+    if isinstance(this, GeoSeries):
+        this = this.geometry
+    if isinstance(that, GeoSeries):
+        that = that.geometry
+
+    this_na = _isna(this)
+    that_na = _isna(that)
+    
+    empty_mask = this.is_empty | that.is_empty
+    na_mask = this_na | that_na
+    
+    almost_equals_mask = this.almost_equals(that)
+    
+    return (empty_mask & na_mask) | almost_equals_mask
 
 
 def geom_almost_equals(this, that):
@@ -86,7 +115,7 @@ def geom_almost_equals(this, that):
     bool
         True if all geometries in left almost equal geometries in right
     """
-    pass
+    return _geom_almost_equals_mask(this, that).all()
 
 
 def assert_geoseries_equal(left, right, check_dtype=True, check_index_type=
@@ -119,12 +148,45 @@ def assert_geoseries_equal(left, right, check_dtype=True, check_index_type=
         Typically useful with ``check_less_precise=True``, which uses
         ``geom_equals_exact`` and requires exact coordinate order.
     """
-    pass
+    if check_series_type:
+        assert isinstance(left, GeoSeries)
+        assert isinstance(right, GeoSeries)
+
+    if check_dtype:
+        assert isinstance(left.dtype, GeometryDtype)
+        assert isinstance(right.dtype, GeometryDtype)
+
+    if check_index_type:
+        assert isinstance(left.index, type(right.index))
+
+    assert len(left) == len(right)
+
+    if check_crs and check_series_type:
+        assert left.crs == right.crs
+
+    if normalize:
+        left = left.normalize()
+        right = right.normalize()
+
+    if check_geom_type:
+        assert (left.geom_type == right.geom_type).all()
+
+    if check_less_precise:
+        assert geom_almost_equals(left, right)
+    else:
+        assert geom_equals(left, right)
 
 
 def _truncated_string(geom):
     """Truncated WKT repr of geom"""
-    pass
+    if geom is None:
+        return 'None'
+    if geom.is_empty:
+        return 'EMPTY'
+    wkt = geom.wkt
+    if len(wkt) > 80:
+        return wkt[:77] + '...'
+    return wkt
 
 
 def assert_geodataframe_equal(left, right, check_dtype=True,
@@ -158,4 +220,52 @@ def assert_geodataframe_equal(left, right, check_dtype=True,
         Typically useful with ``check_less_precise=True``, which uses
         ``geom_equals_exact`` and requires exact coordinate order.
     """
-    pass
+    if check_frame_type:
+        assert isinstance(left, GeoDataFrame)
+        assert isinstance(right, GeoDataFrame)
+
+    assert len(left) == len(right)
+    assert len(left.columns) == len(right.columns)
+
+    if check_like:
+        left = left.sort_index().sort_index(axis=1)
+        right = right.sort_index().sort_index(axis=1)
+
+    assert (left.columns == right.columns).all()
+
+    if check_dtype:
+        assert (left.dtypes == right.dtypes).all()
+
+    if check_index_type == 'equiv':
+        assert left.index.equals(right.index)
+    elif check_index_type:
+        assert isinstance(left.index, type(right.index))
+
+    if check_column_type == 'equiv':
+        assert (left.columns == right.columns).all()
+    elif check_column_type:
+        assert isinstance(left.columns, type(right.columns))
+
+    if check_crs and check_frame_type:
+        assert left.crs == right.crs
+
+    if normalize:
+        left.geometry = left.geometry.normalize()
+        right.geometry = right.geometry.normalize()
+
+    if check_geom_type:
+        assert (left.geometry.geom_type == right.geometry.geom_type).all()
+
+    for col in left.columns:
+        if col == left._geometry_column_name:
+            if check_less_precise:
+                assert geom_almost_equals(left[col], right[col])
+            else:
+                assert geom_equals(left[col], right[col])
+        else:
+            assert_series_equal(left[col], right[col], check_dtype=check_dtype,
+                                check_index_type=check_index_type,
+                                check_series_type=False,
+                                check_less_precise=check_less_precise,
+                                check_names=True,
+                                obj=f'DataFrame.{col}')
