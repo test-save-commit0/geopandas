@@ -41,14 +41,26 @@ def _check_crs(left, right, allow_none=False):
 
     If allow_none is True, empty CRS is treated as the same.
     """
-    pass
+    if allow_none and (left is None or right is None):
+        return True
+    elif left is None or right is None:
+        return False
+    else:
+        return left == right
 
 
 def _crs_mismatch_warn(left, right, stacklevel=3):
     """
     Raise a CRS mismatch warning with the information on the assigned CRS.
     """
-    pass
+    warnings.warn(
+        f"CRS mismatch between the CRS of left geometries and right geometries.\n"
+        f"Left CRS: {left}\n"
+        f"Right CRS: {right}\n"
+        "Use `to_crs()` to reproject geometries to the same CRS before comparison.",
+        UserWarning,
+        stacklevel=stacklevel
+    )
 
 
 def isna(value):
@@ -58,7 +70,7 @@ def isna(value):
     Custom version that only works for scalars (returning True or False),
     as `pd.isna` also works for array-like input returning a boolean array.
     """
-    pass
+    return value is None or (isinstance(value, float) and np.isnan(value)) or pd.isna(value)
 
 
 def from_shapely(data, crs=None):
@@ -77,14 +89,30 @@ def from_shapely(data, crs=None):
         such as an authority string (eg "EPSG:4326") or a WKT string.
 
     """
-    pass
+    if not isinstance(data, np.ndarray):
+        data = np.array(data, dtype=object)
+    
+    if data.ndim != 1:
+        raise ValueError("Only 1-dimensional input is supported")
+
+    # Validate that all elements are shapely geometries or None
+    for geom in data:
+        if geom is not None and not isinstance(geom, BaseGeometry):
+            raise TypeError(f"Invalid geometry object {geom}")
+
+    return GeometryArray(data, crs=crs)
 
 
 def to_shapely(geoms):
     """
     Convert GeometryArray to numpy object array of shapely objects.
     """
-    pass
+    if isinstance(geoms, GeometryArray):
+        return geoms._data
+    elif isinstance(geoms, np.ndarray):
+        return geoms
+    else:
+        raise TypeError("Input must be a GeometryArray or numpy array")
 
 
 def from_wkb(data, crs=None, on_invalid='raise'):
@@ -106,14 +134,48 @@ def from_wkb(data, crs=None, on_invalid='raise'):
         - ignore: invalid WKB geometries will be returned as None without a warning.
 
     """
-    pass
+    import shapely.wkb
+
+    if not isinstance(data, np.ndarray):
+        data = np.array(data, dtype=object)
+
+    geoms = []
+    for wkb in data:
+        try:
+            geom = shapely.wkb.loads(wkb)
+            geoms.append(geom)
+        except Exception as e:
+            if on_invalid == 'raise':
+                raise ValueError(f"Invalid WKB geometry: {e}")
+            elif on_invalid == 'warn':
+                warnings.warn(f"Invalid WKB geometry: {e}", UserWarning)
+                geoms.append(None)
+            elif on_invalid == 'ignore':
+                geoms.append(None)
+            else:
+                raise ValueError("Invalid value for on_invalid")
+
+    return GeometryArray(np.array(geoms, dtype=object), crs=crs)
 
 
 def to_wkb(geoms, hex=False, **kwargs):
     """
     Convert GeometryArray to a numpy object array of WKB objects.
     """
-    pass
+    import shapely.wkb
+
+    if isinstance(geoms, GeometryArray):
+        geoms = geoms._data
+
+    wkb_objects = []
+    for geom in geoms:
+        if geom is None:
+            wkb_objects.append(None)
+        else:
+            wkb = shapely.wkb.dumps(geom, hex=hex, **kwargs)
+            wkb_objects.append(wkb)
+
+    return np.array(wkb_objects, dtype=object)
 
 
 def from_wkt(data, crs=None, on_invalid='raise'):
