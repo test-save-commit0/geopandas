@@ -37,18 +37,61 @@ def uniform(geom, size, rng=None):
     >>> square = box(0,0,1,1)
     >>> uniform(square, size=102) # doctest: +SKIP
     """
-    pass
+    if rng is None:
+        rng = numpy.random.default_rng()
+
+    if geom.geom_type == 'Polygon':
+        return _uniform_polygon(geom, size, rng)
+    elif geom.geom_type == 'LineString':
+        return _uniform_line(geom, size, rng)
+    elif geom.geom_type == 'MultiPolygon':
+        weights = [p.area for p in geom.geoms]
+        total_weight = sum(weights)
+        weights = [w / total_weight for w in weights]
+        counts = rng.multinomial(size, weights)
+        points = [_uniform_polygon(p, c, rng) for p, c in zip(geom.geoms, counts) if c > 0]
+        return MultiPoint([p for subpoints in points for p in subpoints.geoms])
+    elif geom.geom_type == 'MultiLineString':
+        weights = [l.length for l in geom.geoms]
+        total_weight = sum(weights)
+        weights = [w / total_weight for w in weights]
+        counts = rng.multinomial(size, weights)
+        points = [_uniform_line(l, c, rng) for l, c in zip(geom.geoms, counts) if c > 0]
+        return MultiPoint([p for subpoints in points for p in subpoints.geoms])
+    else:
+        warn(f"Geometry type {geom.geom_type} not supported. Returning empty MultiPoint.")
+        return MultiPoint()
 
 
 def _uniform_line(geom, size, generator):
     """
     Sample points from an input shapely linestring
     """
-    pass
+    if size == 0:
+        return MultiPoint()
+
+    total_length = geom.length
+    distances = generator.random(size) * total_length
+    points = [geom.interpolate(distance) for distance in distances]
+    return MultiPoint(points)
 
 
 def _uniform_polygon(geom, size, generator):
     """
     Sample uniformly from within a polygon using batched sampling.
     """
-    pass
+    if size == 0:
+        return MultiPoint()
+
+    minx, miny, maxx, maxy = geom.bounds
+    points = []
+    batch_size = min(1000, size * 2)  # Adjust batch size as needed
+
+    while len(points) < size:
+        x = generator.uniform(minx, maxx, batch_size)
+        y = generator.uniform(miny, maxy, batch_size)
+        candidates = MultiPoint(list(zip(x, y)))
+        valid_points = [p for p in candidates.geoms if geom.contains(p)]
+        points.extend(valid_points[:size - len(points)])
+
+    return MultiPoint(points[:size])
