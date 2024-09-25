@@ -10,7 +10,15 @@ import functools
 
 def get_keywords() ->Dict[str, str]:
     """Get the keywords needed to look up the version information."""
-    pass
+    # these strings will be replaced by git during git-archive.
+    # setup.py/versioneer.py will grep for the variable names, so they must
+    # each be defined on a line of their own. _version.py will just call
+    # get_keywords().
+    git_refnames = "$Format:%d$"
+    git_full = "$Format:%H$"
+    git_date = "$Format:%ci$"
+    keywords = {"refnames": git_refnames, "full": git_full, "date": git_date}
+    return keywords
 
 
 class VersioneerConfig:
@@ -25,7 +33,15 @@ class VersioneerConfig:
 
 def get_config() ->VersioneerConfig:
     """Create, populate and return the VersioneerConfig() object."""
-    pass
+    # these strings are filled in when 'setup.py versioneer' creates _version.py
+    cfg = VersioneerConfig()
+    cfg.VCS = "git"
+    cfg.style = "pep440"
+    cfg.tag_prefix = "v"
+    cfg.parentdir_prefix = "geopandas-"
+    cfg.versionfile_source = "geopandas/_version.py"
+    cfg.verbose = False
+    return cfg
 
 
 class NotThisMethod(Exception):
@@ -38,14 +54,49 @@ HANDLERS: Dict[str, Dict[str, Callable]] = {}
 
 def register_vcs_handler(vcs: str, method: str) ->Callable:
     """Create decorator to mark a method as the handler of a VCS."""
-    pass
+    def decorate(f):
+        """Store f in HANDLERS[vcs][method]."""
+        if vcs not in HANDLERS:
+            HANDLERS[vcs] = {}
+        HANDLERS[vcs][method] = f
+        return f
+    return decorate
 
 
 def run_command(commands: List[str], args: List[str], cwd: Optional[str]=
     None, verbose: bool=False, hide_stderr: bool=False, env: Optional[Dict[
     str, str]]=None) ->Tuple[Optional[str], Optional[int]]:
     """Call the given command(s)."""
-    pass
+    assert isinstance(commands, list)
+    p = None
+    for c in commands:
+        try:
+            dispcmd = str([c] + args)
+            # remember shell=False, so use git.cmd on windows, not just git
+            p = subprocess.Popen([c] + args, cwd=cwd, env=env,
+                                 stdout=subprocess.PIPE,
+                                 stderr=(subprocess.PIPE if hide_stderr
+                                         else None))
+            break
+        except EnvironmentError:
+            e = sys.exc_info()[1]
+            if e.errno == errno.ENOENT:
+                continue
+            if verbose:
+                print("unable to run %s" % dispcmd)
+                print(e)
+            return None, None
+    else:
+        if verbose:
+            print("unable to find command, tried %s" % (commands,))
+        return None, None
+    stdout = p.communicate()[0].strip().decode()
+    if p.returncode != 0:
+        if verbose:
+            print("unable to run %s (error)" % dispcmd)
+            print("stdout was %s" % stdout)
+        return None, p.returncode
+    return stdout, p.returncode
 
 
 def versions_from_parentdir(parentdir_prefix: str, root: str, verbose: bool
@@ -56,7 +107,22 @@ def versions_from_parentdir(parentdir_prefix: str, root: str, verbose: bool
     the project name and a version string. We will also support searching up
     two directory levels for an appropriately named parent directory
     """
-    pass
+    rootdirs = []
+
+    for i in range(3):
+        dirname = os.path.basename(root)
+        if dirname.startswith(parentdir_prefix):
+            return {"version": dirname[len(parentdir_prefix):],
+                    "full-revisionid": None,
+                    "dirty": False, "error": None, "date": None}
+        else:
+            rootdirs.append(root)
+            root = os.path.dirname(root)
+
+    if verbose:
+        print("Tried directories %s but none started with prefix %s" %
+              (str(rootdirs), parentdir_prefix))
+    raise NotThisMethod("rootdir doesn't start with parentdir_prefix")
 
 
 @register_vcs_handler('git', 'get_keywords')
