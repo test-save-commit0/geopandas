@@ -128,14 +128,81 @@ def versions_from_parentdir(parentdir_prefix: str, root: str, verbose: bool
 @register_vcs_handler('git', 'get_keywords')
 def git_get_keywords(versionfile_abs: str) ->Dict[str, str]:
     """Extract version information from the given file."""
-    pass
+    # the code embedded in _version.py can just fetch the value of these
+    # keywords. When used from setup.py, we don't want to import _version.py,
+    # so we do it with a regexp instead. This function is not used from
+    # _version.py.
+    keywords = {}
+    try:
+        f = open(versionfile_abs, "r")
+        for line in f.readlines():
+            if line.strip().startswith("git_refnames ="):
+                mo = re.search(r'=\s*"(.*)"', line)
+                if mo:
+                    keywords["refnames"] = mo.group(1)
+            if line.strip().startswith("git_full ="):
+                mo = re.search(r'=\s*"(.*)"', line)
+                if mo:
+                    keywords["full"] = mo.group(1)
+            if line.strip().startswith("git_date ="):
+                mo = re.search(r'=\s*"(.*)"', line)
+                if mo:
+                    keywords["date"] = mo.group(1)
+        f.close()
+    except EnvironmentError:
+        pass
+    return keywords
 
 
 @register_vcs_handler('git', 'keywords')
 def git_versions_from_keywords(keywords: Dict[str, str], tag_prefix: str,
     verbose: bool) ->Dict[str, Any]:
     """Get version information from git keywords."""
-    pass
+    if not keywords:
+        raise NotThisMethod("no keywords at all, weird")
+    date = keywords.get("date")
+    if date is not None:
+        # git-2.2.0 added "%cI", which expands to an ISO-8601 format
+        date = date.strip().replace(" ", "T", 1).replace(" ", "", 1)
+    refnames = keywords["refnames"].strip()
+    if refnames.startswith("$Format"):
+        if verbose:
+            print("keywords are unexpanded, not using")
+        raise NotThisMethod("unexpanded keywords, not a git-archive tarball")
+    refs = set([r.strip() for r in refnames.strip("()").split(",")])
+    # starting in git-1.8.3, tags are listed as "tag: foo-1.0" instead of
+    # just "foo-1.0". If we see a "tag: " prefix, prefer those.
+    TAG = "tag: "
+    tags = set([r[len(TAG):] for r in refs if r.startswith(TAG)])
+    if not tags:
+        # Either we're using git < 1.8.3, or there really are no tags. We use
+        # a heuristic: assume all version tags have a digit. The old git %d
+        # expansion behaves like git log --decorate=short and strips out the
+        # refs/heads/ and refs/tags/ prefixes that would let us distinguish
+        # between branches and tags. By ignoring refnames without digits, we
+        # filter out many common branch names like "release" and
+        # "stabilization", as well as "HEAD" and "master".
+        tags = set([r for r in refs if re.search(r'\d', r)])
+        if verbose:
+            print("discarding '%s', no digits" % ",".join(refs - tags))
+    if verbose:
+        print("likely tags: %s" % ",".join(sorted(tags)))
+    for ref in sorted(tags):
+        # sorting will prefer e.g. "2.0" over "2.0rc1"
+        if ref.startswith(tag_prefix):
+            r = ref[len(tag_prefix):]
+            if verbose:
+                print("picking %s" % r)
+            return {"version": r,
+                    "full-revisionid": keywords["full"].strip(),
+                    "dirty": False, "error": None,
+                    "date": date}
+    # no suitable tags, so version is "0+unknown", but full hex is still there
+    if verbose:
+        print("no suitable tags, using unknown + full revision id")
+    return {"version": "0+unknown",
+            "full-revisionid": keywords["full"].strip(),
+            "dirty": False, "error": "no suitable tags", "date": None}
 
 
 @register_vcs_handler('git', 'pieces_from_vcs')
@@ -147,12 +214,95 @@ def git_pieces_from_vcs(tag_prefix: str, root: str, verbose: bool, runner:
     expanded, and _version.py hasn't already been rewritten with a short
     version string, meaning we're inside a checked out source tree.
     """
-    pass
+    GITS = ["git"]
+    if sys.platform == "win32":
+        GITS = ["git.cmd", "git.exe"]
+
+    out, rc = runner(GITS, ["rev-parse", "--git-dir"], cwd=root,
+                     hide_stderr=True)
+    if rc != 0:
+        if verbose:
+            print("Directory %s not under git control" % root)
+        raise NotThisMethod("'git rev-parse --git-dir' returned error")
+
+    # if there is a tag matching tag_prefix, this yields TAG-NUM-gHEX[-dirty]
+    # if there isn't one, this yields HEX[-dirty] (no NUM)
+    describe_out, rc = runner(GITS, ["describe", "--tags", "--dirty",
+                                     "--always", "--long",
+                                     "--match", "%s*" % tag_prefix],
+                              cwd=root)
+    # --long was added in git-1.5.5
+    if describe_out is None:
+        raise NotThisMethod("'git describe' failed")
+    describe_out = describe_out.strip()
+    full_out, rc = runner(GITS, ["rev-parse", "HEAD"], cwd=root)
+    if full_out is None:
+        raise NotThisMethod("'git rev-parse' failed")
+    full_out = full_out.strip()
+
+    pieces = {}
+    pieces["long"] = full_out
+    pieces["short"] = full_out[:7]  # maybe improved later
+    pieces["error"] = None
+
+    # parse describe_out. It will be like TAG-NUM-gHEX[-dirty] or HEX[-dirty]
+    # TAG might have hyphens.
+    git_describe = describe_out
+
+    # look for -dirty suffix
+    dirty = git_describe.endswith("-dirty")
+    pieces["dirty"] = dirty
+    if dirty:
+        git_describe = git_describe[:git_describe.rindex("-dirty")]
+
+    # now we have TAG-NUM-gHEX or HEX
+
+    if "-" in git_describe:
+        # TAG-NUM-gHEX
+        mo = re.search(r'^(.+)-(\d+)-g([0-9a-f]+)$', git_describe)
+        if not mo:
+            # unparseable. Maybe git-describe is misbehaving?
+            pieces["error"] = ("unable to parse git-describe output: '%s'"
+                               % describe_out)
+            return pieces
+
+        # tag
+        full_tag = mo.group(1)
+        if not full_tag.startswith(tag_prefix):
+            if verbose:
+                fmt = "tag '%s' doesn't start with prefix '%s'"
+                print(fmt % (full_tag, tag_prefix))
+            pieces["error"] = ("tag '%s' doesn't start with prefix '%s'"
+                               % (full_tag, tag_prefix))
+            return pieces
+        pieces["closest-tag"] = full_tag[len(tag_prefix):]
+
+        # distance: number of commits since tag
+        pieces["distance"] = int(mo.group(2))
+
+        # commit: short hex revision ID
+        pieces["short"] = mo.group(3)
+
+    else:
+        # HEX: no tags
+        pieces["closest-tag"] = None
+        count_out, rc = runner(GITS, ["rev-list", "HEAD", "--count"],
+                               cwd=root)
+        pieces["distance"] = int(count_out)  # total number of commits
+
+    # commit date: see ISO-8601 comment in git_versions_from_keywords()
+    date = runner(GITS, ["show", "-s", "--format=%ci", "HEAD"],
+                  cwd=root)[0].strip()
+    pieces["date"] = date.strip().replace(" ", "T", 1).replace(" ", "", 1)
+
+    return pieces
 
 
 def plus_or_dot(pieces: Dict[str, Any]) ->str:
     """Return a + if we don't already have one, else return a ."""
-    pass
+    if "+" in pieces.get("closest-tag", ""):
+        return "."
+    return "+"
 
 
 def render_pep440(pieces: Dict[str, Any]) ->str:
@@ -164,7 +314,20 @@ def render_pep440(pieces: Dict[str, Any]) ->str:
     Exceptions:
     1: no tags. git_describe was just HEX. 0+untagged.DISTANCE.gHEX[.dirty]
     """
-    pass
+    if pieces["closest-tag"]:
+        rendered = pieces["closest-tag"]
+        if pieces["distance"] or pieces["dirty"]:
+            rendered += plus_or_dot(pieces)
+            rendered += "%d.g%s" % (pieces["distance"], pieces["short"])
+            if pieces["dirty"]:
+                rendered += ".dirty"
+    else:
+        # exception #1
+        rendered = "0+untagged.%d.g%s" % (pieces["distance"],
+                                          pieces["short"])
+        if pieces["dirty"]:
+            rendered += ".dirty"
+    return rendered
 
 
 def render_pep440_branch(pieces: Dict[str, Any]) ->str:
@@ -176,7 +339,24 @@ def render_pep440_branch(pieces: Dict[str, Any]) ->str:
     Exceptions:
     1: no tags. 0[.dev0]+untagged.DISTANCE.gHEX[.dirty]
     """
-    pass
+    if pieces["closest-tag"]:
+        rendered = pieces["closest-tag"]
+        if pieces["distance"] or pieces["dirty"]:
+            rendered += ".dev0"
+            rendered += plus_or_dot(pieces)
+            rendered += "%d.g%s" % (pieces["distance"], pieces["short"])
+            if pieces["dirty"]:
+                rendered += ".dirty"
+    else:
+        # exception #1
+        rendered = "0"
+        if pieces["distance"] or pieces["dirty"]:
+            rendered += ".dev0"
+            rendered += "+untagged.%d.g%s" % (pieces["distance"],
+                                              pieces["short"])
+            if pieces["dirty"]:
+                rendered += ".dirty"
+    return rendered
 
 
 def pep440_split_post(ver: str) ->Tuple[str, Optional[int]]:
