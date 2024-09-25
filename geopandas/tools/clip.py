@@ -37,7 +37,18 @@ def _clip_gdf_with_mask(gdf, mask, sort=False):
         The returned GeoDataFrame is a clipped subset of gdf
         that intersects with polygon/rectangle.
     """
-    pass
+    if isinstance(mask, (Polygon, MultiPolygon)):
+        clipped = gdf.intersection(mask)
+    else:
+        clipped = gdf.clip_by_rect(*mask)
+    
+    # Remove empty geometries
+    clipped = clipped[~clipped.is_empty]
+    
+    if sort:
+        clipped = clipped.sort_index()
+    
+    return GeoDataFrame(clipped, crs=gdf.crs)
 
 
 def clip(gdf, mask, keep_geom_type=False, sort=False):
@@ -105,4 +116,19 @@ def clip(gdf, mask, keep_geom_type=False, sort=False):
     >>> nws_groceries.shape
     (7, 8)
     """
-    pass
+    if isinstance(gdf, GeoSeries):
+        return _clip_gdf_with_mask(GeoDataFrame(geometry=gdf), mask, sort=sort).geometry
+
+    _check_crs(gdf, mask)
+
+    if isinstance(mask, (GeoDataFrame, GeoSeries)):
+        mask = mask.geometry.unary_union
+    elif isinstance(mask, (list, tuple)) and len(mask) == 4:
+        mask = box(*mask)
+
+    clipped = _clip_gdf_with_mask(gdf, mask, sort=sort)
+
+    if keep_geom_type:
+        clipped = clipped[clipped.geom_type == gdf.geom_type]
+
+    return clipped
