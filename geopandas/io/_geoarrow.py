@@ -101,7 +101,52 @@ def geopandas_to_arrow(df, index=None, geometry_encoding='WKB', interleaved
         specify the keyword).
 
     """
-    pass
+    if not isinstance(df, GeoDataFrame):
+        raise ValueError("Input must be a GeoDataFrame")
+
+    # Handle index
+    if index is None:
+        index = not isinstance(df.index, pd.RangeIndex)
+    
+    # Convert DataFrame to Arrow table
+    table = pa.Table.from_pandas(df, preserve_index=index)
+    
+    # Handle geometry column
+    geom_col = df.geometry.name
+    geom_array = df.geometry.values
+    
+    if geometry_encoding == 'WKB':
+        wkb_array = pa.array(geom_array.to_wkb())
+        field = pa.field(geom_col, pa.binary())
+        table = table.set_column(table.schema.get_field_index(geom_col), field, wkb_array)
+    elif geometry_encoding == 'geoarrow':
+        if include_z is None:
+            include_z = geom_array.has_z.any()
+        
+        coord_type = pa.float64()
+        if interleaved:
+            coords = [g.coords[:] for g in geom_array]
+            if include_z:
+                coords_array = pa.list_(pa.list_(coord_type, 3))
+            else:
+                coords_array = pa.list_(pa.list_(coord_type, 2))
+            coords_array = pa.array(coords, type=coords_array)
+        else:
+            x, y = zip(*[(c[0], c[1]) for g in geom_array for c in g.coords])
+            if include_z:
+                z = [c[2] if len(c) > 2 else float('nan') for g in geom_array for c in g.coords]
+                coords_array = pa.StructArray.from_arrays([pa.array(x), pa.array(y), pa.array(z)], ['x', 'y', 'z'])
+            else:
+                coords_array = pa.StructArray.from_arrays([pa.array(x), pa.array(y)], ['x', 'y'])
+        
+        geom_type = pa.array([g.geom_type for g in geom_array], pa.string())
+        field = pa.field(geom_col, pa.struct([('type', pa.string()), ('coordinates', coords_array.type)]))
+        geoarrow_array = pa.StructArray.from_arrays([geom_type, coords_array], ['type', 'coordinates'])
+        table = table.set_column(table.schema.get_field_index(geom_col), field, geoarrow_array)
+    else:
+        raise ValueError("Invalid geometry_encoding. Must be 'WKB' or 'geoarrow'")
+    
+    return table
 
 
 def arrow_to_geopandas(table, geometry=None):
@@ -121,7 +166,55 @@ def arrow_to_geopandas(table, geometry=None):
     GeoDataFrame
 
     """
-    pass
+    if not isinstance(table, pa.Table):
+        raise ValueError("Input must be a pyarrow.Table")
+
+    # Convert Arrow table to pandas DataFrame
+    df = table.to_pandas()
+
+    # Find geometry column
+    if geometry is None:
+        geometry_columns = [field.name for field in table.schema if 
+                            isinstance(field.type, pa.BinaryType) or 
+                            (isinstance(field.type, pa.StructType) and 'type' in field.type.names and 'coordinates' in field.type.names)]
+        if not geometry_columns:
+            raise ValueError("No geometry column found in the Arrow table")
+        geometry = geometry_columns[0]
+    elif geometry not in table.column_names:
+        raise ValueError(f"Specified geometry column '{geometry}' not found in the Arrow table")
+
+    # Convert geometry column
+    if isinstance(table.field(geometry).type, pa.BinaryType):
+        # WKB encoding
+        df[geometry] = from_wkb(df[geometry])
+    elif isinstance(table.field(geometry).type, pa.StructType):
+        # GeoArrow encoding
+        geom_array = table[geometry]
+        geom_type = geom_array.field('type').to_pylist()
+        coords = geom_array.field('coordinates').to_pylist()
+        
+        geometries = []
+        for gtype, coord in zip(geom_type, coords):
+            if gtype == 'Point':
+                geometries.append(shapely.Point(coord[0]))
+            elif gtype == 'LineString':
+                geometries.append(shapely.LineString(coord))
+            elif gtype == 'Polygon':
+                geometries.append(shapely.Polygon(coord[0], coord[1:]))
+            elif gtype == 'MultiPoint':
+                geometries.append(shapely.MultiPoint(coord))
+            elif gtype == 'MultiLineString':
+                geometries.append(shapely.MultiLineString(coord))
+            elif gtype == 'MultiPolygon':
+                geometries.append(shapely.MultiPolygon([shapely.Polygon(p[0], p[1:]) for p in coord]))
+            else:
+                raise ValueError(f"Unsupported geometry type: {gtype}")
+        
+        df[geometry] = from_shapely(geometries)
+    else:
+        raise ValueError(f"Unsupported geometry encoding for column '{geometry}'")
+
+    return GeoDataFrame(df, geometry=geometry)
 
 
 def arrow_to_geometry_array(arr):
@@ -131,7 +224,34 @@ def arrow_to_geometry_array(arr):
 
     Specifically for GeoSeries.from_arrow.
     """
-    pass
+    if isinstance(arr, pa.BinaryArray):
+        # WKB encoding
+        return from_wkb(arr.to_pylist())
+    elif isinstance(arr, pa.StructArray):
+        # GeoArrow encoding
+        geom_type = arr.field('type').to_pylist()
+        coords = arr.field('coordinates').to_pylist()
+        
+        geometries = []
+        for gtype, coord in zip(geom_type, coords):
+            if gtype == 'Point':
+                geometries.append(shapely.Point(coord[0]))
+            elif gtype == 'LineString':
+                geometries.append(shapely.LineString(coord))
+            elif gtype == 'Polygon':
+                geometries.append(shapely.Polygon(coord[0], coord[1:]))
+            elif gtype == 'MultiPoint':
+                geometries.append(shapely.MultiPoint(coord))
+            elif gtype == 'MultiLineString':
+                geometries.append(shapely.MultiLineString(coord))
+            elif gtype == 'MultiPolygon':
+                geometries.append(shapely.MultiPolygon([shapely.Polygon(p[0], p[1:]) for p in coord]))
+            else:
+                raise ValueError(f"Unsupported geometry type: {gtype}")
+        
+        return from_shapely(geometries)
+    else:
+        raise ValueError("Unsupported Arrow array type for geometry conversion")
 
 
 def construct_shapely_array(arr: pa.Array, extension_name: str):
@@ -140,4 +260,28 @@ def construct_shapely_array(arr: pa.Array, extension_name: str):
     with GeoArrow extension type.
 
     """
-    pass
+    if not isinstance(arr, pa.Array):
+        raise ValueError("Input must be a pyarrow.Array")
+
+    if extension_name not in GEOARROW_ENCODINGS:
+        raise ValueError(f"Unsupported GeoArrow encoding: {extension_name}")
+
+    geom_type = GeometryType[extension_name.upper()]
+    coords = arr.field('coordinates').to_pylist()
+
+    geometries = []
+    for coord in coords:
+        if geom_type == GeometryType.POINT:
+            geometries.append(shapely.Point(coord))
+        elif geom_type == GeometryType.LINESTRING:
+            geometries.append(shapely.LineString(coord))
+        elif geom_type == GeometryType.POLYGON:
+            geometries.append(shapely.Polygon(coord[0], coord[1:]))
+        elif geom_type == GeometryType.MULTIPOINT:
+            geometries.append(shapely.MultiPoint(coord))
+        elif geom_type == GeometryType.MULTILINESTRING:
+            geometries.append(shapely.MultiLineString(coord))
+        elif geom_type == GeometryType.MULTIPOLYGON:
+            geometries.append(shapely.MultiPolygon([shapely.Polygon(p[0], p[1:]) for p in coord]))
+
+    return np.array(geometries, dtype=object)
