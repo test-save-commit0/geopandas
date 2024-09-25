@@ -27,7 +27,12 @@ def check_available_postgis_drivers() ->list[str]:
     This prevents tests running if the relevant package isn't installed
     (rather than being skipped, as skips are treated as failures during postgis CI)
     """
-    pass
+    available_drivers = []
+    if find_spec("psycopg2"):
+        available_drivers.append("psycopg2")
+    if find_spec("psycopg"):
+        available_drivers.append("psycopg")
+    return available_drivers
 
 
 POSTGIS_DRIVERS = check_available_postgis_drivers()
@@ -35,7 +40,13 @@ POSTGIS_DRIVERS = check_available_postgis_drivers()
 
 def prepare_database_credentials() ->dict:
     """Gather postgres connection credentials from environment variables."""
-    pass
+    return {
+        "dbname": os.environ.get("PGDATABASE", "test_geopandas"),
+        "user": os.environ.get("PGUSER", "postgres"),
+        "password": os.environ.get("PGPASSWORD", ""),
+        "host": os.environ.get("PGHOST", "localhost"),
+        "port": os.environ.get("PGPORT", 5432),
+    }
 
 
 @pytest.fixture()
@@ -43,7 +54,20 @@ def connection_postgis(request):
     """Create a postgres connection using either psycopg2 or psycopg.
 
     Use this as an indirect fixture, where the request parameter is POSTGIS_DRIVERS."""
-    pass
+    driver = request.param
+    credentials = prepare_database_credentials()
+    
+    if driver == "psycopg2":
+        import psycopg2
+        conn = psycopg2.connect(**credentials)
+    elif driver == "psycopg":
+        import psycopg
+        conn = psycopg.connect(**credentials)
+    else:
+        raise ValueError(f"Unsupported driver: {driver}")
+    
+    yield conn
+    conn.close()
 
 
 @pytest.fixture()
@@ -53,7 +77,20 @@ def engine_postgis(request):
 
     Use this as an indirect fixture, where the request parameter is POSTGIS_DRIVERS.
     """
-    pass
+    from sqlalchemy import create_engine
+    
+    driver = request.param
+    credentials = prepare_database_credentials()
+    
+    if driver == "psycopg2":
+        engine = create_engine(f"postgresql+psycopg2://{credentials['user']}:{credentials['password']}@{credentials['host']}:{credentials['port']}/{credentials['dbname']}")
+    elif driver == "psycopg":
+        engine = create_engine(f"postgresql+psycopg://{credentials['user']}:{credentials['password']}@{credentials['host']}:{credentials['port']}/{credentials['dbname']}")
+    else:
+        raise ValueError(f"Unsupported driver: {driver}")
+    
+    yield engine
+    engine.dispose()
 
 
 @pytest.fixture()
@@ -72,7 +109,18 @@ def connection_spatialite():
     ``AttributeError`` on missing support for loadable SQLite extensions
     ``sqlite3.OperationalError`` on missing SpatiaLite
     """
-    pass
+    import sqlite3
+    
+    try:
+        conn = sqlite3.connect(":memory:")
+        conn.enable_load_extension(True)
+        conn.load_extension("mod_spatialite")
+    except (AttributeError, sqlite3.OperationalError) as e:
+        pytest.skip(f"Unable to load SpatiaLite extension: {str(e)}")
+    
+    conn.execute("SELECT InitSpatialMetadata(1)")
+    yield conn
+    conn.close()
 
 
 class TestIO:
