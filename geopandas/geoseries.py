@@ -193,7 +193,7 @@ class GeoSeries(GeoPandasBase, Series):
         GeoSeries.z
 
         """
-        pass
+        return Series([geom.x if geom else None for geom in self], index=self.index)
 
     @property
     def y(self) ->Series:
@@ -221,7 +221,7 @@ class GeoSeries(GeoPandasBase, Series):
         GeoSeries.z
 
         """
-        pass
+        return Series([geom.y if geom else None for geom in self], index=self.index)
 
     @property
     def z(self) ->Series:
@@ -249,7 +249,7 @@ class GeoSeries(GeoPandasBase, Series):
         GeoSeries.y
 
         """
-        pass
+        return Series([geom.z if geom and hasattr(geom, 'z') else None for geom in self], index=self.index)
 
     @classmethod
     def from_file(cls, filename: (os.PathLike | typing.IO), **kwargs
@@ -602,7 +602,7 @@ class GeoSeries(GeoPandasBase, Series):
         GeoSeries.notna : inverse of isna
         GeoSeries.is_empty : detect empty geometries
         """
-        pass
+        return Series([geom is None for geom in self], index=self.index)
 
     def isnull(self) ->Series:
         """Alias for `isna` method. See `isna` for more detail."""
@@ -647,7 +647,7 @@ class GeoSeries(GeoPandasBase, Series):
         GeoSeries.isna : inverse of notna
         GeoSeries.is_empty : detect empty geometries
         """
-        pass
+        return Series([geom is not None for geom in self], index=self.index)
 
     def notnull(self) ->Series:
         """Alias for `notna` method. See `notna` for more detail."""
