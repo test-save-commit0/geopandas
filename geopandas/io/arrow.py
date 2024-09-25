@@ -26,7 +26,22 @@ def _remove_id_from_member_of_ensembles(json_dict):
 
     Mimicking the patch to GDAL from https://github.com/OSGeo/gdal/pull/5872
     """
-    pass
+    if isinstance(json_dict, dict):
+        if "datum" in json_dict:
+            datum = json_dict["datum"]
+            if isinstance(datum, dict) and "ensemble" in datum:
+                ensemble = datum["ensemble"]
+                if isinstance(ensemble, dict) and "members" in ensemble:
+                    members = ensemble["members"]
+                    if isinstance(members, list):
+                        for member in members:
+                            if isinstance(member, dict):
+                                member.pop("id", None)
+        for value in json_dict.values():
+            _remove_id_from_member_of_ensembles(value)
+    elif isinstance(json_dict, list):
+        for item in json_dict:
+            _remove_id_from_member_of_ensembles(item)
 
 
 _geometry_type_names = ['Point', 'LineString', 'LineString', 'Polygon',
@@ -39,7 +54,7 @@ def _get_geometry_types(series):
     """
     Get unique geometry types from a GeoSeries.
     """
-    pass
+    return list(series.geom_type.unique())
 
 
 def _create_metadata(df, schema_version=None, geometry_encoding=None,
@@ -61,7 +76,40 @@ def _create_metadata(df, schema_version=None, geometry_encoding=None,
     -------
     dict
     """
-    pass
+    if schema_version is None:
+        schema_version = SUPPORTED_VERSIONS[-1]
+    
+    if schema_version not in SUPPORTED_VERSIONS:
+        raise ValueError(f"Unsupported schema version: {schema_version}")
+    
+    geometry_columns = df.select_dtypes(include=['geometry']).columns
+    if len(geometry_columns) == 0:
+        raise ValueError("No geometry column found in GeoDataFrame")
+    
+    primary_geometry = df.geometry.name
+    
+    metadata = {
+        "version": schema_version,
+        "primary_column": primary_geometry,
+        "columns": {}
+    }
+    
+    for col in geometry_columns:
+        col_metadata = {
+            "encoding": geometry_encoding or "WKB",
+            "geometry_types": _get_geometry_types(df[col])
+        }
+        
+        if df[col].crs:
+            col_metadata["crs"] = df[col].crs.to_wkt()
+        
+        if write_covering_bbox:
+            bounds = df[col].total_bounds
+            col_metadata["bbox"] = [bounds[0], bounds[1], bounds[2], bounds[3]]
+        
+        metadata["columns"][col] = col_metadata
+    
+    return metadata
 
 
 def _encode_metadata(metadata):
